@@ -14,6 +14,7 @@ import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.Visualizer
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -142,60 +143,103 @@ class CaptureService : Service() {
         return sqrt(s / max(1, n))
     }
 
+    /**
+     * The phone's output mix through Android's Visualizer effect (session 0). Unlike playback capture,
+     * apps such as Spotify can't opt out of it, so it is what we use when capture hears nothing.
+     */
+    private inner class MixTap {
+        val viz: Visualizer
+        val rate: Int
+        private val wave: ByteArray
+        private var lastNs = 0L
+        init {
+            viz = Visualizer(0)
+            viz.enabled = false
+            viz.captureSize = Visualizer.getCaptureSizeRange()[1]
+            viz.scalingMode = Visualizer.SCALING_MODE_NORMALIZED
+            viz.enabled = true
+            rate = viz.samplingRate / 1000
+            wave = ByteArray(viz.captureSize)
+        }
+        /** Copies the samples played since the last call (newest last) into out; returns how many. */
+        fun read(out: FloatArray): Int {
+            if (viz.getWaveForm(wave) != Visualizer.SUCCESS) return 0
+            val now = System.nanoTime()
+            val fresh = if (lastNs == 0L) out.size else ((now - lastNs) * rate / 1_000_000_000L).toInt()
+            lastNs = now
+            val k = fresh.coerceIn(0, minOf(out.size, wave.size))
+            val off = wave.size - k
+            for (i in 0 until k) out[i] = ((wave[off + i].toInt() and 0xff) - 128) / 128f
+            return k
+        }
+        fun release() { try { viz.enabled = false; viz.release() } catch (_: Exception) {} }
+    }
+
     private fun startWorker(mode: String) {
         running = true
         worker = Thread({
             val buf = FloatArray(256)          // ~5 ms per read
-            val probe = FloatArray(960)
+            val mixBuf = FloatArray(1024)
             val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val device = if (mode == "device") playbackRecord() else null
+            val tap: MixTap? = if (mode == "device") try { MixTap() } catch (e: Exception) { null } else null
             var mic: AudioRecord? = null
-            var useMic = device == null
-            if (useMic) {
-                mic = micRecord()
-                Engine.status = if (mic == null) "no-permission"
-                    else if (mode == "device") (if (projection == null) "capture-denied" else "capture-failed") else "mic"
-            } else {
-                Engine.status = "device"
-            }
             device?.startRecording()
-            mic?.startRecording()
-            var quietMs = 0
-            var loudMs = 0
+            // which source feeds the visuals: "device" (playback capture), "mix" (Visualizer), "mic"
+            var using = ""
+            fun use(src: String, rate: Int) {
+                if (using == src) return
+                using = src
+                Engine.via = when (src) { "device" -> "phone"; "mix" -> "phone mix"; else -> "mic" }
+                Engine.analyzer.setSource(true, rate)
+                Engine.status = when (src) { "device", "mix" -> "device"; else -> if (mode == "device") "mic-fallback" else "mic" }
+            }
+            var devQuietMs = 99999
+            var mixQuietMs = 99999
+            if (mode != "device") {
+                mic = micRecord(); mic?.startRecording()
+                if (mic == null) Engine.status = "no-permission" else use("mic", SAMPLE_RATE)
+            }
             while (running) {
-                if (!useMic && device != null) {
-                    val n = device.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
-                    if (n <= 0) { Thread.sleep(10); continue }
-                    if (rms(buf, n) < 1e-4f) quietMs += n * 1000 / SAMPLE_RATE else { quietMs = 0; if (Engine.status != "device") Engine.status = "device" }
-                    if (quietMs > 2500) {
-                        if (am.isMusicActive) {
-                            // the phone IS playing but we hear nothing: that app blocks capture. Never switch to
-                            // the microphone here (it can't hear headphones); tell the user instead.
-                            Engine.status = "blocked"
-                        } else {
-                            // nothing is playing on this phone: listen through the microphone until it plays again
-                            if (mic == null) { mic = micRecord(); mic?.startRecording() }
-                            if (mic != null) { useMic = true; loudMs = 0; Engine.status = "mic-fallback" }
-                        }
-                    }
-                    if (!useMic) Engine.analyzer.process(buf, n)
-                } else {
+                if (mode != "device") {
                     val m = mic ?: break
                     val n = m.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
                     if (n > 0) Engine.analyzer.process(buf, n)
-                    if (device != null) {
-                        val k = device.read(probe, 0, probe.size, AudioRecord.READ_NON_BLOCKING)
-                        if (k > 0) {
-                            if (rms(probe, k) > 1e-4f) loudMs += k * 1000 / SAMPLE_RATE else loudMs = 0
-                            if (loudMs > 100) { useMic = false; quietMs = 0; Engine.status = "device" }
+                    continue
+                }
+                // 1) playback capture (best quality), when the playing app allows it
+                var n = 0
+                if (device != null) {
+                    n = device.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
+                    if (n > 0) { if (rms(buf, n) > 1e-4f) devQuietMs = 0 else devQuietMs += n * 1000 / SAMPLE_RATE }
+                } else Thread.sleep(5)
+                // 2) the output mix: works for Spotify and other apps that block capture
+                var k = 0
+                if (tap != null) {
+                    k = tap.read(mixBuf)
+                    if (k > 0) { if (rms(mixBuf, k) > 2e-3f) mixQuietMs = 0 else mixQuietMs += k * 1000 / tap.rate }
+                }
+                when {
+                    devQuietMs < 1500 && n > 0 -> { use("device", SAMPLE_RATE); Engine.analyzer.process(buf, n) }
+                    tap != null && (mixQuietMs < 1500 || am.isMusicActive) -> { use("mix", tap.rate); if (k > 0) Engine.analyzer.process(mixBuf, k) }
+                    else -> {
+                        // the phone is silent: listen through the microphone (music on another device)
+                        if (mic == null) { mic = micRecord(); mic?.startRecording() }
+                        val m = mic
+                        if (m == null) { if (using != "none") { using = "none"; Engine.status = "no-permission" } }
+                        else {
+                            use("mic", SAMPLE_RATE)
+                            val r = m.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
+                            if (r > 0) Engine.analyzer.process(buf, r)
                         }
-                        // the phone started playing (even an app that blocks capture): stop using the microphone
-                        if (useMic && am.isMusicActive) { useMic = false; quietMs = 0; Engine.status = "device" }
                     }
                 }
+                // stop the microphone as soon as the phone itself plays
+                if (using != "mic" && mic != null) { try { mic?.stop() } catch (_: Exception) {}; mic?.release(); mic = null }
             }
             try { device?.stop() } catch (_: Exception) {}
             device?.release()
+            tap?.release()
             try { mic?.stop() } catch (_: Exception) {}
             mic?.release()
         }, "nocturne-capture")

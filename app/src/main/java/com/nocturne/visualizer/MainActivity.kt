@@ -214,7 +214,7 @@ class MainActivity : Activity() {
         override fun run() {
             val f = Frame(); Engine.analyzer.snapshot(f)
             meter.progress = (f.energy * 100).toInt()
-            status.text = if (f.bpm > 0 && f.live) "${f.bpm.toInt()} BPM" else ""
+            status.text = (if (source == "demo") "demo" else Engine.via) + (if (f.bpm > 0 && f.live) "  ${f.bpm.toInt()} BPM" else "")
             if (source == "demo" && !seeking && demo.durationUs > 0) {
                 seek.progress = (demo.positionUs * 1000 / demo.durationUs).toInt()
                 timeText.text = fmt(demo.positionUs / 1e6) + " / " + fmt(demo.durationUs / 1e6)

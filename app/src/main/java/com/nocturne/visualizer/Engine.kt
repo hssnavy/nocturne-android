@@ -7,4 +7,8 @@ object Engine {
     /** "idle", "device", "mic", "mic-fallback", "no-permission" or "demo" — shown to the user. */
     @Volatile
     var status = "idle"
+
+    /** Where the sound feeding the visuals comes from right now, shown next to the BPM. */
+    @Volatile
+    var via = ""
 }
