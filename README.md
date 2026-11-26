@@ -4,13 +4,19 @@ A native music visualizer for Android 8.0 or newer (listening to the phone's own
 
 ## How it works
 
-There is no browser inside. Sound goes straight from Android's audio system into a Kotlin analyser that runs every ~5 ms (FFT, 10 EQ bands plus a .1 sub channel, beat and tempo tracking, song energy), and the visuals are drawn with OpenGL ES 3.0 from the newest analysis on every frame.
+There is no browser inside. Sound goes straight from Android's audio system into a native analyser, and the visuals
+are drawn with OpenGL ES 3.0 at the screen's full refresh rate (90/120 Hz where the phone has it), at full resolution
+up to 4K, stepping down only if the graphics chip can't keep up.
 
-- **This phone**: visualises whatever the phone plays (Spotify, YouTube, games). Android asks for permission each time; tap **Start now**. A "Nocturne is listening" notification shows while it runs.
-- **Automatic microphone fallback**: when nothing has played for 2.5 seconds it listens through the microphone, and switches back as soon as the phone plays again. This also covers apps that block capture of their sound.
-- **Microphone**: microphone only.
-- **Demo track**: the built-in track, with a seek bar.
-- Styles in this build: **Wave**, **Tunnel**, **Light speed**. Quiet passages stay calm and dark; full energy is much more aggressive.
+The analysis is the same as the web version's: a fine tone map (every note, 20 Hz-20 kHz), the 10-band EQ + .1 channel,
+the kick drum from the .1 channel (worked out in exact 10 ms steps), tempo, the energy learned from your teaching
+(the Demo track follows your own taught curve), the Wave's 1/3/5/7 strings, and the Light speed ship.
+
+- **This phone**: whatever the phone plays (Spotify included, through the output mix). Tap **Start now** when Android asks.
+- **Automatic microphone fallback** only when the phone itself is silent.
+- **Demo track** with pause, seek and ±10 s.
+- Styles: Spectrum bars, Radial, Wave, Tunnel, Kaleidoscope, Shatter, Rising sparks, Warp, Fractal, Light speed.
+- 16 pictures (13 photos + 3 generated), the controls minimise to a small chevron at the bottom-right.
 
 ## Build the APK
 

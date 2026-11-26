@@ -22,9 +22,11 @@ class DemoPlayer(private val ctx: Context) {
     @Volatile var positionUs = 0L; private set
     @Volatile private var seekTo = -1L
     val isPlaying get() = running
+    @Volatile var paused = false
 
     fun start() {
         stop()
+        paused = false
         running = true
         worker = Thread({ loop() }, "nocturne-demo").also { it.priority = Thread.MAX_PRIORITY; it.start() }
     }
@@ -87,9 +89,15 @@ class DemoPlayer(private val ctx: Context) {
                 }
                 if (n > 0) Engine.analyzer.process(chunk, n)
                 positionUs = baseUs + head * 1_000_000L / rate
+                Engine.demoPos = positionUs / 1e6
             }
 
+            var wasPaused = false
             while (running) {
+                if (paused) {                                    // pause: the speaker stops, the visuals go quiet
+                    if (!wasPaused) { t.pause(); wasPaused = true; Engine.demoPos = -1.0 }
+                    Thread.sleep(15); continue
+                } else if (wasPaused) { t.play(); wasPaused = false }
                 val sk = seekTo
                 if (sk >= 0) {
                     seekTo = -1
@@ -149,6 +157,7 @@ class DemoPlayer(private val ctx: Context) {
         } catch (e: Exception) {
             Engine.status = "demo-error"
         } finally {
+            Engine.demoPos = -1.0
             try { track?.stop() } catch (_: Exception) {}
             track?.release()
             try { codec?.stop() } catch (_: Exception) {}

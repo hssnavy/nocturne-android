@@ -1,7 +1,13 @@
 [
  {
+  "id": "wave",
   "name": "Ember Sand",
   "file": "wave.jpg",
+  "styles": [
+   "rise",
+   "wave",
+   "bars"
+  ],
   "pal": [
    [
     0.0,
@@ -23,11 +29,18 @@
     0.28,
     0.275
    ]
-  ]
+  ],
+  "gen": 0
  },
  {
+  "id": "smoke",
   "name": "Blue Smoke",
   "file": "smoke.jpg",
+  "styles": [
+   "wave",
+   "shatter",
+   "tunnel"
+  ],
   "pal": [
    [
     0.211,
@@ -49,11 +62,18 @@
     0.642,
     1.0
    ]
-  ]
+  ],
+  "gen": 0
  },
  {
+  "id": "nebula",
   "name": "Quiet Nebula",
   "file": "nebula.jpg",
+  "styles": [
+   "warp",
+   "tunnel",
+   "rise"
+  ],
   "pal": [
    [
     0.176,
@@ -75,11 +95,18 @@
     0.634,
     1.0
    ]
-  ]
+  ],
+  "gen": 0
  },
  {
+  "id": "galaxy",
   "name": "Andromeda",
   "file": "galaxy.jpg",
+  "styles": [
+   "warp",
+   "radial",
+   "tunnel"
+  ],
   "pal": [
    [
     1.0,
@@ -101,11 +128,18 @@
     0.868,
     0.808
    ]
-  ]
+  ],
+  "gen": 0
  },
  {
+  "id": "paint",
   "name": "Paint Splash",
   "file": "paint.jpg",
+  "styles": [
+   "bars",
+   "rise",
+   "kaleido"
+  ],
   "pal": [
    [
     1.0,
@@ -127,11 +161,18 @@
     1.0,
     0.719
    ]
-  ]
+  ],
+  "gen": 0
  },
  {
+  "id": "orbs",
   "name": "Violet Orbs",
   "file": "orbs.jpg",
+  "styles": [
+   "fractal",
+   "kaleido",
+   "warp"
+  ],
   "pal": [
    [
     0.148,
@@ -153,11 +194,18 @@
     0.075,
     1.0
    ]
-  ]
+  ],
+  "gen": 0
  },
  {
+  "id": "swirl",
   "name": "Frost Spiral",
   "file": "swirl.jpg",
+  "styles": [
+   "fractal",
+   "tunnel",
+   "warp"
+  ],
   "pal": [
    [
     0.003,
@@ -179,11 +227,18 @@
     0.905,
     1.0
    ]
-  ]
+  ],
+  "gen": 0
  },
  {
+  "id": "green",
   "name": "Green Orbit",
   "file": "green.jpg",
+  "styles": [
+   "radial",
+   "wave",
+   "shatter"
+  ],
   "pal": [
    [
     0.0,
@@ -205,11 +260,18 @@
     1.0,
     0.989
    ]
-  ]
+  ],
+  "gen": 0
  },
  {
+  "id": "tunnel",
   "name": "Blue Tunnel",
   "file": "tunnel.jpg",
+  "styles": [
+   "tunnel",
+   "radial",
+   "bars"
+  ],
   "pal": [
    [
     0.0,
@@ -231,11 +293,18 @@
     0.525,
     1.0
    ]
-  ]
+  ],
+  "gen": 0
  },
  {
+  "id": "flame",
   "name": "The Lighter",
   "file": "flame.jpg",
+  "styles": [
+   "rise",
+   "bars",
+   "shatter"
+  ],
   "pal": [
    [
     1.0,
@@ -257,11 +326,18 @@
     0.936,
     0.927
    ]
-  ]
+  ],
+  "gen": 0
  },
  {
+  "id": "ring",
   "name": "Red Circle",
   "file": "ring.jpg",
+  "styles": [
+   "tunnel",
+   "warp",
+   "shatter"
+  ],
   "pal": [
    [
     1.0,
@@ -283,11 +359,18 @@
     0.866,
     0.966
    ]
-  ]
+  ],
+  "gen": 0
  },
  {
+  "id": "spheres",
   "name": "Two Spheres",
   "file": "spheres.jpg",
+  "styles": [
+   "warp",
+   "fractal",
+   "radial"
+  ],
   "pal": [
    [
     1.0,
@@ -309,11 +392,18 @@
     0.977,
     1.0
    ]
-  ]
+  ],
+  "gen": 0
  },
  {
+  "id": "rain",
   "name": "Night Rain",
   "file": "rain.jpg",
+  "styles": [
+   "rise",
+   "shatter",
+   "bars"
+  ],
   "pal": [
    [
     0.058,
@@ -335,6 +425,106 @@
     0.777,
     1.0
    ]
-  ]
+  ],
+  "gen": 0
+ },
+ {
+  "id": "ember",
+  "name": "Ember Line",
+  "file": "",
+  "styles": [
+   "wave",
+   "rise",
+   "warp"
+  ],
+  "pal": [
+   [
+    1,
+    0.3,
+    0.05
+   ],
+   [
+    1,
+    0.48,
+    0.14
+   ],
+   [
+    0.18,
+    0.32,
+    1
+   ],
+   [
+    1,
+    0.8,
+    0.55
+   ]
+  ],
+  "gen": 1
+ },
+ {
+  "id": "ink",
+  "name": "Ink Smoke",
+  "file": "",
+  "styles": [
+   "warp",
+   "fractal",
+   "tunnel"
+  ],
+  "pal": [
+   [
+    0.12,
+    0.3,
+    0.8
+   ],
+   [
+    0.25,
+    0.5,
+    1
+   ],
+   [
+    0.55,
+    0.75,
+    1
+   ],
+   [
+    0.85,
+    0.92,
+    1
+   ]
+  ],
+  "gen": 2
+ },
+ {
+  "id": "halo",
+  "name": "Halo",
+  "file": "",
+  "styles": [
+   "warp",
+   "radial",
+   "fractal"
+  ],
+  "pal": [
+   [
+    1,
+    0.3,
+    0.12
+   ],
+   [
+    0.08,
+    0.6,
+    0.8
+   ],
+   [
+    1,
+    0.55,
+    0.3
+   ],
+   [
+    0.9,
+    0.95,
+    1
+   ]
+  ],
+  "gen": 3
  }
 ]
