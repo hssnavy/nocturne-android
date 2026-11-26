@@ -54,6 +54,7 @@ class CaptureService : Service() {
                 }, null)
             }
         }
+        Engine.analyzer.setSource(true, SAMPLE_RATE)
         startWorker(mode)
         return START_NOT_STICKY
     }
@@ -88,13 +89,13 @@ class CaptureService : Service() {
 
     private fun format(): AudioFormat = AudioFormat.Builder()
         .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-        .setSampleRate(AudioHub.SAMPLE_RATE)
+        .setSampleRate(SAMPLE_RATE)
         .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
         .build()
 
     private fun bufferBytes(): Int = max(
-        AudioRecord.getMinBufferSize(AudioHub.SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_FLOAT),
-        AudioHub.SAMPLE_RATE / 10 * 4
+        AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_FLOAT),
+        SAMPLE_RATE / 10 * 4
     )
 
     @SuppressLint("MissingPermission")
@@ -151,9 +152,9 @@ class CaptureService : Service() {
             var useMic = device == null
             if (useMic) {
                 mic = micRecord()
-                AudioHub.status = if (mic == null) "no-permission" else if (mode == "device") "mic-fallback" else "mic"
+                Engine.status = if (mic == null) "no-permission" else if (mode == "device") "mic-fallback" else "mic"
             } else {
-                AudioHub.status = "device"
+                Engine.status = "device"
             }
             device?.startRecording()
             mic?.startRecording()
@@ -163,22 +164,22 @@ class CaptureService : Service() {
                 if (!useMic && device != null) {
                     val n = device.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
                     if (n <= 0) { Thread.sleep(10); continue }
-                    if (rms(buf, n) < 1e-4f) quietMs += n * 1000 / AudioHub.SAMPLE_RATE else quietMs = 0
+                    if (rms(buf, n) < 1e-4f) quietMs += n * 1000 / SAMPLE_RATE else quietMs = 0
                     if (quietMs > 2500) {
                         // nothing is playing on this phone: listen through the microphone until it plays again
                         if (mic == null) { mic = micRecord(); mic?.startRecording() }
-                        if (mic != null) { useMic = true; loudMs = 0; AudioHub.status = "mic-fallback" }
+                        if (mic != null) { useMic = true; loudMs = 0; Engine.status = "mic-fallback" }
                     }
-                    if (!useMic) AudioHub.write(buf, n)
+                    if (!useMic) Engine.analyzer.process(buf, n)
                 } else {
                     val m = mic ?: break
                     val n = m.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
-                    if (n > 0) AudioHub.write(buf, n)
+                    if (n > 0) Engine.analyzer.process(buf, n)
                     if (device != null) {
                         val k = device.read(probe, 0, probe.size, AudioRecord.READ_NON_BLOCKING)
                         if (k > 0) {
-                            if (rms(probe, k) > 1e-3f) loudMs += k * 1000 / AudioHub.SAMPLE_RATE else loudMs = 0
-                            if (loudMs > 300) { useMic = false; quietMs = 0; AudioHub.status = "device" }
+                            if (rms(probe, k) > 1e-3f) loudMs += k * 1000 / SAMPLE_RATE else loudMs = 0
+                            if (loudMs > 300) { useMic = false; quietMs = 0; Engine.status = "device" }
                         }
                     }
                 }
@@ -202,11 +203,15 @@ class CaptureService : Service() {
         stopWorker()
         projection?.stop()
         projection = null
-        AudioHub.status = "idle"
+        if (Engine.status != "demo") {            // the demo track may already be playing into the analyser
+            Engine.analyzer.setSource(false, SAMPLE_RATE)
+            Engine.status = "idle"
+        }
         super.onDestroy()
     }
 
     companion object {
+        const val SAMPLE_RATE = 48000
         private const val CHANNEL = "capture"
         private const val NOTIFICATION_ID = 1
     }

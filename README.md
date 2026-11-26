@@ -1,14 +1,16 @@
 # Nocturne for Android
 
-The Nocturne visualizer as an Android app (Android 8.0 or newer; listening to the phone's own sound needs Android 10 or newer).
+A native music visualizer for Android 8.0 or newer (listening to the phone's own sound needs Android 10 or newer).
 
-## What it does
+## How it works
 
-- Opens full screen with the same visuals, styles and settings as the web preview. Your track is built in as the Demo track.
-- **This phone**: visualises whatever the phone is playing (Spotify, YouTube, games…). Android asks for permission each time it starts; tap **Start now**. A small "Nocturne is listening" notification shows while it runs.
-- **Automatic microphone fallback**: if nothing has played on the phone for 2.5 seconds, the app listens through the microphone instead, and switches back as soon as the phone plays again. This also covers apps that block other apps from capturing their sound.
-- **Microphone**: listens only through the microphone.
-- **Music file**: picks a song from the phone.
+There is no browser inside. Sound goes straight from Android's audio system into a Kotlin analyser that runs every ~5 ms (FFT, 10 EQ bands plus a .1 sub channel, beat and tempo tracking, song energy), and the visuals are drawn with OpenGL ES 3.0 from the newest analysis on every frame.
+
+- **This phone**: visualises whatever the phone plays (Spotify, YouTube, games). Android asks for permission each time; tap **Start now**. A "Nocturne is listening" notification shows while it runs.
+- **Automatic microphone fallback**: when nothing has played for 2.5 seconds it listens through the microphone, and switches back as soon as the phone plays again. This also covers apps that block capture of their sound.
+- **Microphone**: microphone only.
+- **Demo track**: the built-in track, with a seek bar.
+- Styles in this build: **Wave**, **Tunnel**, **Light speed**. Quiet passages stay calm and dark; full energy is much more aggressive.
 
 ## Build the APK
 
