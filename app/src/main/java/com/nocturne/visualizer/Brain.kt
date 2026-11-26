@@ -424,7 +424,9 @@ class Brain(ctx: Context) {
             for (i in i0 until i1) { val v = toneV[i]; mx = max(mx, v); sm += v; fl += max(0f, v - strPrev[i]) }
             val fr = if (NS > 1) b.toFloat() / (NS - 1) else 0.5f
             val sus = if (live) mx * 0.55f + sm / (i1 - i0) * 0.6f else 0f
-            val lt = if (live) min(1.8f, sus + (if (i0 == 0) chLev[10] * 0.3f else 0f)) else 0f
+            // sensitivity per string: lows as they were, mids a little more (x1.2), highs more (x1.5)
+            val g = 1 + 0.2f * min(1f, fr * 2) + 0.3f * max(0f, fr * 2 - 1)
+            val lt = if (live) min(1.8f, sus * g + (if (i0 == 0) chLev[10] * 0.3f else 0f)) else 0f
             strL[b] = if (lt > strL[b]) lt else strL[b] + (lt - strL[b]) * min(1f, dt * (6 + 6 * fr))
             strS[b] += (sus - strS[b]) * min(1f, dt / 1.2f)
             val st = max(0f, min(1f, 1 - abs(sus - strS[b]) * 2.5f))
@@ -433,7 +435,7 @@ class Brain(ctx: Context) {
             val f = if (live) fl / (i1 - i0) else 0f
             val hs = strHist[b]; hs.addLast(f); if (hs.size > 45) hs.removeFirst()
             val (mean, sd) = meanSd(hs)
-            if (live && hs.size > 10 && f > mean + 1.4f * sd + 0.004f && now - strLast[b] > 110) {
+            if (live && hs.size > 10 && f > mean + 1.4f * sd / g + 0.004f / g && now - strLast[b] > 110) {
                 strHit[b] = max(strHit[b], min(1f, 0.55f + (f - mean) / (4 * sd + 1e-4f))); strAge[b] = 0f; strLast[b] = now
             }
             strHit[b] *= exp(-dt * (5 + 4 * fr)); strAge[b] += dt
