@@ -1,7 +1,10 @@
 name: Build Nocturne APK
 on:
   push:
+    branches: [main]
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -14,7 +17,24 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build
         run: chmod +x gradlew && ./gradlew assembleRelease --stacktrace
+      - name: Name the APK
+        run: cp app/build/outputs/apk/release/app-release.apk Nocturne.apk
       - uses: actions/upload-artifact@v4
         with:
           name: Nocturne-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          path: Nocturne.apk
+      # a direct download link on the repository's Releases page (easy to open on the phone)
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Nocturne build ${{ github.run_number }}
+          files: Nocturne.apk
+          make_latest: true
+      # the latest APK on its own branch as well
+      - name: Publish to the apk branch
+        run: |
+          mkdir out && cp Nocturne.apk out/
+          cd out && git init -q && git checkout -q -b apk
+          git config user.name "github-actions" && git config user.email "actions@github.com"
+          git add Nocturne.apk && git commit -q -m "APK from build ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" apk
