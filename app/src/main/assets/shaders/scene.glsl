@@ -1,9 +1,9 @@
 
-uniform sampler2D uTex, uSpec, uPeak, uWave, uTone;
+uniform sampler2D uTex, uSpec, uPeak, uWave, uTone, uToneS;
 uniform vec3 uPal0, uPal1, uPal2, uPal3;
 uniform vec2 uRes, uShake;
 // lows / mids / highs: smoothed level (1 ~ typical for this song), hits (0-1, transients), and their own clocks
-uniform float uLowA, uWaveK, uNStr, uCore, uKAge, uTravel, uSpeed, uSpin, uHyE; uniform float uStr[7]; uniform float uFlow[7]; uniform float uSHit[7]; uniform float uSAge[7];
+uniform float uLowA, uWaveK, uNStr, uCore, uKAge, uTravel, uSpeed, uSpin, uHyE; uniform float uStr[7]; uniform float uFlow[7]; uniform float uSHit[7]; uniform float uSAge[7]; uniform float uSWK[7];
 uniform float uLow, uMid, uHigh, uLowHit, uMidHit, uHighHit, uLowT, uMidT, uHighT;
 // 10-band equaliser channels (31 Hz ... 16 kHz) + the .1 sub channel (index 10)
 uniform float uCh[11]; uniform float uChHit[11];
@@ -11,6 +11,7 @@ uniform float uEnergy, uInt, uTime, uAssemble, uAggr;
 uniform float uMode, uBars, uLayout, uBassMid, uSeg, uColor, uPeakOn, uImgAsp;
 
 float tn(float x){ return texture(uTone, vec2(clamp(x,0.002,0.998),.5)).r*1.3; }
+float tnS(float x){ return texture(uToneS, vec2(clamp(x,0.002,0.998),.5)).r*1.3; }
 float sp(float x){ return texture(uSpec, vec2(clamp(x,0.004,0.996),.5)).r; }
 float pk(float x){ return texture(uPeak, vec2(clamp(x,0.004,0.996),.5)).r; }
 vec3 pal(float t){ t = clamp(t + uAggr*0.45, 0., 1.)*3.;
@@ -115,7 +116,7 @@ void main(){
     //  - BEAT: every hit in a string's slice punches it and sends a pulse running from the right along it
     float Xr = (0.5 - x01)*uRes.x/uRes.y;                          // distance from the right edge
     float envR = smoothstep(0., 0.05, 1. - x01)*(1. - smoothstep(0.9, 1., 1. - x01));
-    float capE = 0.12 + 0.20*uEnergy*uEnergy;
+    float capE = 0.10 + 0.26*uEnergy*uEnergy;
     float n = uNStr;
     for(int k=0;k<7;k++){
       float fk = float(k);
@@ -123,9 +124,9 @@ void main(){
       float fr = n > 1.5 ? fk/(n - 1.) : 0.5;                       // 0 = lowest string, 1 = highest
       float hit = uSHit[k], age = uSAge[k];
       float kick = k == 0 ? uCore : 0.;                              // the kick drum lives in the lowest slice: only that string takes it
-      float amp = min(uStr[k]*(0.08 + 0.10*uEnergy), capE)*(1. - 0.3*fr)*(1. + 0.7*hit + 0.6*kick);
-      float tl = tn((fk + (1. - x01))/n);                           // its slice of tones, low end at the right
-      float w = uWaveK*(n > 1.5 ? 0.55*pow(1.7/0.55, fr) : 1.);
+      float amp = min(min(uStr[k]*(0.06 + 0.14*uEnergy), capE)*(1. - 0.3*fr)*(1. + 0.7*hit + 0.6*kick), 0.34);   // never off the screen
+      float tl = tnS((fk + (1. - x01))/n);                          // every tone of its slice, each against its own peak (low end at the right)
+      float w = uSWK[k];                                            // its own wavelength (only its own frequencies change it)
       float flow = uFlow[k];
       float y = sin(Xr*w - flow + fk*2.1)*0.7 + sin(Xr*w*0.43 - flow*0.6 + fk*1.3)*0.3;
       y *= 0.3 + 0.95*tl;

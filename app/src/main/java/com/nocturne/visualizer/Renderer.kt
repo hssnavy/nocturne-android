@@ -45,9 +45,9 @@ class Renderer(private val ctx: Context, private val pics: List<Pic>, private va
 
     private var PS = 0; private var PC = 0; private var PD = 0; private var PG = 0
     private val loc = HashMap<String, Int>()
-    private var specTex = 0; private var peakTex = 0; private var waveTex = 0; private var toneTex = 0
+    private var specTex = 0; private var peakTex = 0; private var waveTex = 0; private var toneTex = 0; private var toneSTex = 0
     private val bSpec = ByteBuffer.allocateDirect(Brain.SPEC_N); private val bPeak = ByteBuffer.allocateDirect(Brain.SPEC_N)
-    private val bWave = ByteBuffer.allocateDirect(Brain.WAVE_N); private val bTone = ByteBuffer.allocateDirect(Brain.TONE_N)
+    private val bWave = ByteBuffer.allocateDirect(Brain.WAVE_N); private val bTone = ByteBuffer.allocateDirect(Brain.TONE_N); private val bToneS = ByteBuffer.allocateDirect(Brain.TONE_N)
     private var floatOK = false
     private var W = 1; private var H = 1
     private var tw = 0; private var th = 0
@@ -71,7 +71,7 @@ class Renderer(private val ctx: Context, private val pics: List<Pic>, private va
             PD = program(vs, common + asset("shaders/display.glsl"))
             PG = program(vs, common + asset("shaders/source.glsl"))
             GLES30.glUseProgram(PG); GLES30.glUniform1i(u(PG, "uSpec"), 1)
-            GLES30.glUseProgram(PS); GLES30.glUniform1i(u(PS, "uTex"), 0); GLES30.glUniform1i(u(PS, "uSpec"), 1); GLES30.glUniform1i(u(PS, "uPeak"), 2); GLES30.glUniform1i(u(PS, "uWave"), 3); GLES30.glUniform1i(u(PS, "uTone"), 4)
+            GLES30.glUseProgram(PS); GLES30.glUniform1i(u(PS, "uTex"), 0); GLES30.glUniform1i(u(PS, "uSpec"), 1); GLES30.glUniform1i(u(PS, "uPeak"), 2); GLES30.glUniform1i(u(PS, "uWave"), 3); GLES30.glUniform1i(u(PS, "uTone"), 4); GLES30.glUniform1i(u(PS, "uToneS"), 5)
             GLES30.glUseProgram(PC); GLES30.glUniform1i(u(PC, "uScene"), 0); GLES30.glUniform1i(u(PC, "uPrev"), 1)
             GLES30.glUseProgram(PD); GLES30.glUniform1i(u(PD, "uSrc"), 0)
             val vao = IntArray(1); GLES30.glGenVertexArrays(1, vao, 0); GLES30.glBindVertexArray(vao[0])
@@ -80,7 +80,7 @@ class Renderer(private val ctx: Context, private val pics: List<Pic>, private va
             GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, 24, tri, GLES30.GL_STATIC_DRAW)
             GLES30.glEnableVertexAttribArray(0); GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 0, 0)
             GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 1)
-            specTex = dataTex(Brain.SPEC_N); peakTex = dataTex(Brain.SPEC_N); waveTex = dataTex(Brain.WAVE_N); toneTex = dataTex(Brain.TONE_N)
+            specTex = dataTex(Brain.SPEC_N); peakTex = dataTex(Brain.SPEC_N); waveTex = dataTex(Brain.WAVE_N); toneTex = dataTex(Brain.TONE_N); toneSTex = dataTex(Brain.TONE_N)
             tw = 0; th = 0; gen = IntArray(2); picLoaded = -1; picTex = 0; key = ""
             ready = true
         } catch (e: Exception) { ready = false; onError(e.message ?: e.toString()) }
@@ -178,7 +178,7 @@ class Renderer(private val ctx: Context, private val pics: List<Pic>, private va
         if (k != key) { if (st.id == "hyper") brain.resetShip(); key = k; clearTrails() }
         val b = brain; val L = b.lev; val Hh = b.hit; val C = b.clock
 
-        upload(specTex, 1, bSpec, b.specBytes); upload(peakTex, 2, bPeak, b.peakBytes); upload(waveTex, 3, bWave, b.waveBytes); upload(toneTex, 4, bTone, b.toneBytes)
+        upload(specTex, 1, bSpec, b.specBytes); upload(peakTex, 2, bPeak, b.peakBytes); upload(waveTex, 3, bWave, b.waveBytes); upload(toneTex, 4, bTone, b.toneBytes); upload(toneSTex, 5, bToneS, b.toneSBytes)
         if (pic.gen > 0) {
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, gen[1]); GLES30.glViewport(0, 0, GEN_W, GEN_H)
             GLES30.glUseProgram(PG)
@@ -200,7 +200,7 @@ class Renderer(private val ctx: Context, private val pics: List<Pic>, private va
         f1(PS, "uLowT", C[0]); f1(PS, "uMidT", C[1]); f1(PS, "uHighT", C[2])
         f1(PS, "uCore", b.core); f1(PS, "uKAge", if (b.kickT > 0) min(9.0, (now - b.kickT) / 1000).toFloat() else 9f)
         f1(PS, "uTravel", b.hsX); f1(PS, "uSpeed", b.hsV + b.hsB); f1(PS, "uSpin", b.hsSpin); f1(PS, "uHyE", b.hsE)
-        f1(PS, "uNStr", b.strings.toFloat()); fv(PS, "uStr", b.strL); fv(PS, "uFlow", b.strP); fv(PS, "uSHit", b.strHit); fv(PS, "uSAge", b.strAge)
+        f1(PS, "uNStr", b.strings.toFloat()); fv(PS, "uStr", b.strL); fv(PS, "uFlow", b.strP); fv(PS, "uSHit", b.strHit); fv(PS, "uSAge", b.strAge); fv(PS, "uSWK", b.strWK)
         f1(PS, "uWaveK", b.waveK)
         f1(PS, "uLowA", min(1.8f, L[0] + Hh[0] * 0.45f + b.chLev[10] * 0.35f))
         f1(PS, "uEnergy", b.Eg); f1(PS, "uInt", b.int_); f1(PS, "uAggr", b.aggr)

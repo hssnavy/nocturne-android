@@ -70,7 +70,7 @@ class Brain(ctx: Context) {
     private val hopSpec = Spectrum(1024)      // the exact 10 ms steps (tempo + learned energy + kick)
 
     // outputs for the renderer
-    val toneBytes = ByteArray(TONE_N); val specBytes = ByteArray(SPEC_N); val peakBytes = ByteArray(SPEC_N); val waveBytes = ByteArray(WAVE_N) { 128.toByte() }
+    val toneBytes = ByteArray(TONE_N); val toneSBytes = ByteArray(TONE_N); val specBytes = ByteArray(SPEC_N); val peakBytes = ByteArray(SPEC_N); val waveBytes = ByteArray(WAVE_N) { 128.toByte() }
     val chLev = FloatArray(11); val chHit = FloatArray(11)
     val lev = FloatArray(3); val hit = FloatArray(3); val clock = FloatArray(3)
     var E = 0f; var Eg = 0f; var int_ = 1f; var aggr = 0f; var red = 0f; var assemble = 0f; var level = 0f; var tempo = 1f
@@ -78,7 +78,7 @@ class Brain(ctx: Context) {
     val shake = FloatArray(2)
     var live = false; private set
     // wave strings
-    val strL = FloatArray(7); val strP = FloatArray(7); val strHit = FloatArray(7); val strAge = FloatArray(7) { 9f }
+    val strWK = FloatArray(7) { 8f }; private val strPk = FloatArray(7) { -60f }; val strL = FloatArray(7); val strP = FloatArray(7); val strHit = FloatArray(7); val strAge = FloatArray(7) { 9f }
     private val strS = FloatArray(7); private val strSt = FloatArray(7); private val strLast = DoubleArray(7)
     private val strHist = Array(7) { ArrayDeque<Float>() }; private val strPrev = FloatArray(TONE_N); private var strN = -1
     var waveK = 6f
@@ -86,7 +86,7 @@ class Brain(ctx: Context) {
     var hsV = 0f; var hsX = 0f; var hsB = 0f; var hsE = 0f; var hsSpin = 0f
 
     // internal state
-    private val toneDb = FloatArray(TONE_N); private val toneFl = FloatArray(TONE_N) { -100f }; private val toneV = FloatArray(TONE_N)
+    private val toneDb = FloatArray(TONE_N); private val toneFl = FloatArray(TONE_N) { -100f }; private val toneV = FloatArray(TONE_N); private val toneVs = FloatArray(TONE_N); private val pkB = FloatArray(TONE_N) { -90f }
     private val pkR = floatArrayOf(-60f, -60f, -60f)
     private val spec = FloatArray(SPEC_N); private val peak = FloatArray(SPEC_N); private val binAvg = FloatArray(SPEC_N); private val tmp = FloatArray(SPEC_N)
     private var gpk = 0.5f
@@ -277,6 +277,16 @@ class Brain(ctx: Context) {
                 toneV[i] = if (t > toneV[i]) t else toneV[i] + (t - toneV[i]) * min(1f, dt * 22)
                 toneBytes[i] = min(255f, toneV[i] * 196).toInt().toByte()
             }
+            // strings' tone map: every bin against its own recent peak (falls 2 dB/s)
+            for (i in 0 until TONE_N) {
+                val d = toneDb[i]
+                pkB[i] = max(d, max(pkB[i] - dt * 2, -90f))
+                val ref = max(toneFl[i] + 3, pkB[i] - 36)
+                var t = min(1.2f, max(0f, (d - ref) / (pkB[i] + 1 - ref + 1e-3f)) * sens)
+                if (d < -150) t = 0f
+                toneVs[i] = if (t > toneVs[i]) t else toneVs[i] + (t - toneVs[i]) * min(1f, dt * 22)
+                toneSBytes[i] = min(255f, toneVs[i] * 196).toInt().toByte()
+            }
             var gmax = 0f
             for (i in 0 until SPEC_N) {
                 val f0 = 30 * (16000.0 / 30).pow(i.toDouble() / SPEC_N); val f1 = 30 * (16000.0 / 30).pow((i + 1.0) / SPEC_N)
@@ -328,7 +338,7 @@ class Brain(ctx: Context) {
         } else {
             for (i in 0 until SPEC_N) spec[i] *= exp(-dt * 4)
             for (i in 0 until WAVE_N) waveBytes[i] = 128.toByte()
-            for (i in 0 until TONE_N) { toneV[i] *= exp(-dt * 6); toneBytes[i] = min(255f, toneV[i] * 196).toInt().toByte() }
+            for (i in 0 until TONE_N) { toneV[i] *= exp(-dt * 6); toneBytes[i] = min(255f, toneV[i] * 196).toInt().toByte(); toneVs[i] *= exp(-dt * 6); toneSBytes[i] = min(255f, toneVs[i] * 196).toInt().toByte(); toneDb[i] = -200f }
         }
         for (i in 0 until SPEC_N) {
             peak[i] = max(peak[i] - fall * dt, spec[i])
@@ -353,8 +363,8 @@ class Brain(ctx: Context) {
             else if (warm) min(1f, max(0f, (loudS - ps10) / max(0.02f, ps95 - ps10)))
             else min(0.8f, max(0f, (loudS - 0.04f) / 0.45f))
         val taught = if (live) taughtEnergy() else -1f
-        if (taught >= 0) Et = taught
-        E += (Et - E) * min(1f, dt * (if (taught >= 0) 4 else 2))
+        if (taught >= 0) Et = taught else Et = min(1f, max(0f, 0.5f + (Et - 0.5f) * 1.3f))
+        E += (Et - E) * min(1f, dt * (if (taught >= 0) 4 else 3))
         val gate = min(1f, max(0f, (loudS - 0.02f) / 0.08f))
         Eg = gate * (0.3f + 0.7f * E)
         int_ = 0.45f + 1.7f * E.pow(1.3f)
@@ -417,13 +427,15 @@ class Brain(ctx: Context) {
     // ---------------- the Wave's strings ----------------
     private fun strings(dt: Float, now: Double) {
         val NS = strings
-        if (NS != strN) { strN = NS; strL.fill(0f); strS.fill(0f); strSt.fill(0f); strP.fill(0f); strHit.fill(0f); strAge.fill(9f); strLast.fill(0.0); strHist.forEach { it.clear() }; strPrev.fill(0f) }
+        if (NS != strN) { strN = NS; strL.fill(0f); strS.fill(0f); strSt.fill(0f); strP.fill(0f); strHit.fill(0f); strAge.fill(9f); strLast.fill(0.0); strHist.forEach { it.clear() }; strPrev.fill(0f); strPk.fill(-60f); strWK.fill(8f) }
         for (b in 0 until NS) {
             val i0 = TONE_N * b / NS; val i1 = TONE_N * (b + 1) / NS
-            var mx = 0f; var sm = 0f; var fl = 0f
-            for (i in i0 until i1) { val v = toneV[i]; mx = max(mx, v); sm += v; fl += max(0f, v - strPrev[i]) }
+            var fl = 0f; var dmax = -200f
+            for (i in i0 until i1) { val v = toneVs[i]; fl += max(0f, v - strPrev[i]); if (toneDb[i] > dmax) dmax = toneDb[i] }
+            // height = this slice's loudest note against its own loudest lately (falls 0.5 dB/s)
+            strPk[b] = max(dmax, max(strPk[b] - dt * 0.5f, -80f))
             val fr = if (NS > 1) b.toFloat() / (NS - 1) else 0.5f
-            val sus = if (live) mx * 0.55f + sm / (i1 - i0) * 0.6f else 0f
+            val sus = if (live && dmax > -150) max(0f, min(1.2f, (dmax - (strPk[b] - 30)) / 30)) else 0f
             // sensitivity per string: lows as they were, mids a little more (x1.2), highs more (x1.5)
             val g = 1 + 0.2f * min(1f, fr * 2) + 0.3f * max(0f, fr * 2 - 1)
             val lt = if (live) min(1.8f, sus * g + (if (i0 == 0) chLev[10] * 0.3f else 0f)) else 0f
@@ -431,7 +443,10 @@ class Brain(ctx: Context) {
             strS[b] += (sus - strS[b]) * min(1f, dt / 1.2f)
             val st = max(0f, min(1f, 1 - abs(sus - strS[b]) * 2.5f))
             strSt[b] += (st - strSt[b]) * min(1f, dt * 6)
-            strP[b] += dt * (0.7f + 0.7f * fr) * (0.3f + lev[1] * 1.6f) * (1 - strSt[b]) * 2.4f
+            // each string is its own instrument: flow and wavelength follow only its own frequencies
+            strP[b] += dt * (0.7f + 0.7f * fr) * (0.3f + strL[b] * 1.3f) * (1 - strSt[b]) * 2.4f
+            val wkT = 11 * 0.55f * (1.7f / 0.55f).pow(fr) * (1 + 0.9f * min(1.2f, strL[b]))
+            strWK[b] += (wkT - strWK[b]) * min(1f, dt * 5)
             val f = if (live) fl / (i1 - i0) else 0f
             val hs = strHist[b]; hs.addLast(f); if (hs.size > 45) hs.removeFirst()
             val (mean, sd) = meanSd(hs)
@@ -440,6 +455,6 @@ class Brain(ctx: Context) {
             }
             strHit[b] *= exp(-dt * (5 + 4 * fr)); strAge[b] += dt
         }
-        System.arraycopy(toneV, 0, strPrev, 0, TONE_N)
+        System.arraycopy(toneVs, 0, strPrev, 0, TONE_N)
     }
 }
