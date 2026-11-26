@@ -13,7 +13,7 @@ the kick drum from the .1 channel (worked out in exact 10 ms steps), tempo, the 
 (the Demo track follows your own taught curve), the Wave's 1/3/5/7 strings, and the Light speed ship.
 
 - **This phone**: whatever the phone plays (Spotify included, through the output mix). Tap **Start now** when Android asks.
-- **Automatic microphone fallback** only when the phone itself is silent.
+- The microphone is used only when you choose **Microphone**.
 - **Demo track** with pause, seek and ±10 s.
 - Styles: Spectrum bars, Radial, Wave, Tunnel, Kaleidoscope, Shatter, Rising sparks, Warp, Fractal, Light speed.
 - 16 pictures (13 photos + 3 generated), the controls minimise to a small chevron at the bottom-right.

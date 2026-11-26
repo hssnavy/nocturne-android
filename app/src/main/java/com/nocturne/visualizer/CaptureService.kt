@@ -24,10 +24,9 @@ import kotlin.math.sqrt
 
 /**
  * Captures sound while the visualizer is open.
- *  - mode "device": the sound this phone plays (Android 10+). When nothing has played for 2.5 s it listens
- *    through the microphone instead, and switches back as soon as the phone plays again.
- *  - mode "mic": the microphone only.
- * Some apps block capture of their sound; for those the microphone fallback takes over automatically.
+ *  - mode "device": the sound this phone plays (Android 10+), directly where the app allows it, otherwise
+ *    through the phone's output mix (Spotify and other apps that block capture). Never the microphone.
+ *  - mode "mic": the microphone only (only when you choose Microphone).
  */
 class CaptureService : Service() {
 
@@ -192,7 +191,7 @@ class CaptureService : Service() {
                 using = src
                 Engine.via = when (src) { "device" -> "phone"; "mix" -> "phone mix"; else -> "mic" }
                 Engine.analyzer.setSource(true, rate)
-                Engine.status = when (src) { "device", "mix" -> "device"; else -> if (mode == "device") "mic-fallback" else "mic" }
+                Engine.status = when (src) { "device", "mix" -> "device"; else -> "mic" }
             }
             var devQuietMs = 99999
             var mixQuietMs = 99999
@@ -222,20 +221,12 @@ class CaptureService : Service() {
                 when {
                     devQuietMs < 1500 && n > 0 -> { use("device", SAMPLE_RATE); Engine.analyzer.process(buf, n) }
                     tap != null && (mixQuietMs < 1500 || am.isMusicActive) -> { use("mix", tap.rate); if (k > 0) Engine.analyzer.process(mixBuf, k) }
-                    else -> {
-                        // the phone is silent: listen through the microphone (music on another device)
-                        if (mic == null) { mic = micRecord(); mic?.startRecording() }
-                        val m = mic
-                        if (m == null) { if (using != "none") { using = "none"; Engine.status = "no-permission" } }
-                        else {
-                            use("mic", SAMPLE_RATE)
-                            val r = m.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
-                            if (r > 0) Engine.analyzer.process(buf, r)
-                        }
-                    }
+                    // the phone is silent: stay on the phone's sound (the visuals go dark). The microphone is only
+                    // ever used when you choose Microphone yourself.
+                    n > 0 -> { use("device", SAMPLE_RATE); Engine.analyzer.process(buf, n) }
+                    tap != null -> { use("mix", tap.rate); if (k > 0) Engine.analyzer.process(mixBuf, k) }
+                    else -> { use("device", SAMPLE_RATE) }
                 }
-                // stop the microphone as soon as the phone itself plays
-                if (using != "mic" && mic != null) { try { mic?.stop() } catch (_: Exception) {}; mic?.release(); mic = null }
             }
             try { device?.stop() } catch (_: Exception) {}
             device?.release()
