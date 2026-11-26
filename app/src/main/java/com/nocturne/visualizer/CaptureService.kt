@@ -145,14 +145,16 @@ class CaptureService : Service() {
     private fun startWorker(mode: String) {
         running = true
         worker = Thread({
-            val buf = FloatArray(960)          // 20 ms
+            val buf = FloatArray(256)          // ~5 ms per read
             val probe = FloatArray(960)
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val device = if (mode == "device") playbackRecord() else null
             var mic: AudioRecord? = null
             var useMic = device == null
             if (useMic) {
                 mic = micRecord()
-                Engine.status = if (mic == null) "no-permission" else if (mode == "device") "mic-fallback" else "mic"
+                Engine.status = if (mic == null) "no-permission"
+                    else if (mode == "device") (if (projection == null) "capture-denied" else "capture-failed") else "mic"
             } else {
                 Engine.status = "device"
             }
@@ -164,11 +166,17 @@ class CaptureService : Service() {
                 if (!useMic && device != null) {
                     val n = device.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
                     if (n <= 0) { Thread.sleep(10); continue }
-                    if (rms(buf, n) < 1e-4f) quietMs += n * 1000 / SAMPLE_RATE else quietMs = 0
+                    if (rms(buf, n) < 1e-4f) quietMs += n * 1000 / SAMPLE_RATE else { quietMs = 0; if (Engine.status != "device") Engine.status = "device" }
                     if (quietMs > 2500) {
-                        // nothing is playing on this phone: listen through the microphone until it plays again
-                        if (mic == null) { mic = micRecord(); mic?.startRecording() }
-                        if (mic != null) { useMic = true; loudMs = 0; Engine.status = "mic-fallback" }
+                        if (am.isMusicActive) {
+                            // the phone IS playing but we hear nothing: that app blocks capture. Never switch to
+                            // the microphone here (it can't hear headphones); tell the user instead.
+                            Engine.status = "blocked"
+                        } else {
+                            // nothing is playing on this phone: listen through the microphone until it plays again
+                            if (mic == null) { mic = micRecord(); mic?.startRecording() }
+                            if (mic != null) { useMic = true; loudMs = 0; Engine.status = "mic-fallback" }
+                        }
                     }
                     if (!useMic) Engine.analyzer.process(buf, n)
                 } else {
@@ -178,9 +186,11 @@ class CaptureService : Service() {
                     if (device != null) {
                         val k = device.read(probe, 0, probe.size, AudioRecord.READ_NON_BLOCKING)
                         if (k > 0) {
-                            if (rms(probe, k) > 1e-3f) loudMs += k * 1000 / SAMPLE_RATE else loudMs = 0
-                            if (loudMs > 300) { useMic = false; quietMs = 0; Engine.status = "device" }
+                            if (rms(probe, k) > 1e-4f) loudMs += k * 1000 / SAMPLE_RATE else loudMs = 0
+                            if (loudMs > 100) { useMic = false; quietMs = 0; Engine.status = "device" }
                         }
+                        // the phone started playing (even an app that blocks capture): stop using the microphone
+                        if (useMic && am.isMusicActive) { useMic = false; quietMs = 0; Engine.status = "device" }
                     }
                 }
             }

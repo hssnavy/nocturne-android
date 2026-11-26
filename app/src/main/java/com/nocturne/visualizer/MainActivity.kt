@@ -225,6 +225,9 @@ class MainActivity : Activity() {
                 val msg = when (st) {
                     "device" -> "Listening to the sound this phone plays"
                     "mic-fallback" -> "Nothing is playing on this phone, so I'm listening through the microphone"
+                    "blocked" -> "The app that's playing won't let other apps hear its sound. Try another music app, or the Demo track"
+                    "capture-denied" -> "Phone sound needs the screen-share permission (tap Start now). Using the microphone for now"
+                    "capture-failed" -> "This phone wouldn't share its sound, so I'm using the microphone"
                     "mic" -> "Listening through the microphone"
                     "no-permission" -> "Nocturne needs the microphone permission to hear sound"
                     "demo-error" -> "The demo track couldn't play"
@@ -272,7 +275,11 @@ class MainActivity : Activity() {
         if (demo.isPlaying) demo.stop()
         if (mode == "device" && Build.VERSION.SDK_INT >= 29) {
             val mpm = getSystemService(MediaProjectionManager::class.java)
-            startActivityForResult(mpm.createScreenCaptureIntent(), REQ_PROJECTION)
+            // Android 14+: ask for the whole screen. Sharing "one app" would only capture Nocturne's own (silent) sound.
+            val consent = if (Build.VERSION.SDK_INT >= 34)
+                mpm.createScreenCaptureIntent(android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay())
+            else mpm.createScreenCaptureIntent()
+            startActivityForResult(consent, REQ_PROJECTION)
         } else startService(mode, 0, null)
     }
 
@@ -288,7 +295,7 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_PROJECTION) {
             if (resultCode == RESULT_OK && data != null) startService("device", resultCode, data)
-            else startService("mic", 0, null)          // capture declined: use the microphone
+            else { Toast.makeText(this, "Phone sound needs you to tap Start now. Using the microphone for now", Toast.LENGTH_LONG).show(); startService("mic", 0, null) }
         }
     }
 
