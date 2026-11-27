@@ -86,6 +86,7 @@ class MainActivity : Activity() {
         Settings.load(this)
         demo = DemoPlayer(this)
         brain = Brain(this)
+        brain.log = LearnLog(this).also { it.startUploader() }
         val prefs = getPreferences(MODE_PRIVATE)
         minimised = prefs.getBoolean("min", false)
         screenShare = prefs.getBoolean("share", false)
@@ -609,6 +610,7 @@ class MainActivity : Activity() {
     override fun onPause() { gl.onPause(); super.onPause() }
 
     override fun onDestroy() {
+        brain.log?.flush()
         ui.removeCallbacksAndMessages(null)
         stopAll()
         super.onDestroy()

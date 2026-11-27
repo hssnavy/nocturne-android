@@ -107,7 +107,7 @@ class Brain(ctx: Context) {
     private val Lw = floatArrayOf(11.219f, 7.601f, 3.773f, -9.891f, 2.944f, 74.595f)
     private val Lmu = floatArrayOf(-0.60193f, -13.11202f, -1.56391f, 0.00146f, 0.02994f)
     private val Lsd = floatArrayOf(7.46035f, 5.27088f, 2.51173f, 0.00361f, 0.00503f)
-    private var Lx: FloatArray? = null; private var Lxf: FloatArray? = null; private var Lpk = 0f; private var LkickL = 0f; private var LE = -1f
+    private var Lx: FloatArray? = null; private var quiet = 0; private var newSong = false; var songAge = 0f; private var tempoReset = false; @Volatile var songStarted = false; private val tHist = ArrayDeque<FloatArray>(); private var locked = 0f; private var Lxf: FloatArray? = null; private var Lpk = 0f; private var LkickL = 0f; private var LE = -1f
     private val Lprev = IntArray(512); private var primed = false; private var pos = -1L
     private val subH = ArrayDeque<Double>(); private var subPk = Double.NaN; private var subAvg = Double.NaN; private var subT = 0
     // tempo
@@ -127,7 +127,7 @@ class Brain(ctx: Context) {
 
     private fun resetSource() {
         Lx = null; Lxf = null; pos = -1; LE = -1f; primed = false; subH.clear(); subPk = Double.NaN; subAvg = Double.NaN
-        tFilled = 0; tPos = 0; bpm = 0f; tDisagree = 0; tHops = 0
+        tFilled = 0; tPos = 0; bpm = 0f; tDisagree = 0; tHops = 0; locked = 0f; tHist.clear(); quiet = 0; newSong = false; songAge = 0f
         hsV = 0f; hsB = 0f; hsE = 0f
     }
 
@@ -149,6 +149,15 @@ class Brain(ctx: Context) {
         if (live) hops(sr, now)
         analyse(dt, now, sr)
         strings(dt, now)
+        log?.tick(dt, this)
+    }
+
+    var log: LearnLog? = null
+
+    /** The energy model's 5 features and the 4 band levels behind them (for the learning records). */
+    fun learnFeatures(): FloatArray? {
+        val X = Lx ?: return null
+        return floatArrayOf(X[0] - X[1], X[2] - X[1], X[3] - Lpk, X[4] - LkickL, X[4], X[0], X[1], X[2], X[3])
     }
 
     // ---------------- exact 10 ms steps: kick drum (.1), learned energy, tempo ----------------
@@ -191,10 +200,18 @@ class Brain(ctx: Context) {
                 }
             }
             val raw = floatArrayOf(pw(T, hz, 60.0, 200.0), pw(T, hz, 200.0, 800.0), pw(T, hz, 3000.0, 10000.0), pw(T, hz, 0.0, sr / 2.0), (k / max(1, kn)).toFloat())
-            if (raw[3] < -90) continue
-            val X = Lx ?: raw.copyOf().also { Lx = it; Lpk = raw[3]; LkickL = raw[4] }
+            // 1.2 s of silence (between songs) -> the next sound is a new song
+            if (raw[3] < -60) { quiet++; if (quiet > 120) newSong = true; continue }
+            quiet = 0
+            if (Lx == null || newSong) {
+                // a new song: its loudest point is assumed to be still ahead (8 dB above the opening) until it gets there
+                Lx = raw.copyOf(); Lxf = raw.copyOf(); Lpk = raw[3] + 8; LkickL = raw[4]; songAge = 0f; newSong = false
+                tempoReset = true; songStarted = true
+            }
+            songAge += 0.01f
+            val X = Lx!!
             for (j in 0 until 5) X[j] += (raw[j] - X[j]) * (0.01f / 3)
-            val XF = Lxf ?: raw.copyOf().also { Lxf = it }
+            val XF = Lxf!!
             for (j in 0 until 5) XF[j] += (raw[j] - XF[j]) * (0.01f / 0.4f)      // same features, 0.4 s: a rise shows at once
             Lpk = max(X[3], Lpk - 0.1f * 0.01f)
             LkickL += (raw[4] - LkickL) * (0.01f / 30)
@@ -205,7 +222,8 @@ class Brain(ctx: Context) {
         val XF = Lxf ?: X
         val ff = floatArrayOf(XF[0] - XF[1], XF[2] - XF[1], XF[3] - Lpk, XF[4] - LkickL, XF[4])
         var ef = Lw[5]; for (j in 0 until 5) ef += Lw[j] * (ff[j] - Lmu[j]) / Lsd[j]
-        LE = min(1f, max(0f, max(e, ef) / 100))          // instant up, settled down
+        val open = 0.6f + 0.4f * min(1f, songAge / 20)       // songs open calmer than they get
+        LE = min(1f, max(0f, max(e, ef) / 100 * open))          // instant up, settled down
     }
 
     private fun tempoHop(T: IntArray, hz: Double) {
@@ -218,10 +236,11 @@ class Brain(ctx: Context) {
         if (tFilled < 400 || tHops < 50) return
         tHops = 0
         val N = min(800, tFilled)
-        val x = FloatArray(N); var m = 0.0
-        for (i in 0 until N) { x[i] = tLow[(tPos - N + i + 1600) % 800]; m += x[i] }
-        m = m / N + 1e-9
-        for (i in 0 until N) x[i] = ln1p(x[i] / m).toFloat()
+        val x = FloatArray(N); var m = 0.0; var mg = 0.0
+        val lo = FloatArray(N); val gr = FloatArray(N)
+        for (i in 0 until N) { val j = (tPos - N + i + 1600) % 800; lo[i] = tLow[j]; gr[i] = tGrid[j]; m += lo[i]; mg += gr[i] }
+        m = m / N + 1e-9; mg = mg / N + 1e-9
+        for (i in 0 until N) x[i] = (ln1p(lo[i] / m) + 0.6 * ln1p(gr[i] / mg)).toFloat()     // kick + the rest of the kit
         val y = FloatArray(N); var run = 0.0
         for (i in 0 until N) { run += x[i] - (if (i >= 31) x[i - 31] else 0f); val c = min(i + 1, 31); val j = max(0, i - 15); y[j] = max(0.0, x[j] - run / c).toFloat() }
         var ym = 0.0; for (i in 0 until N) ym += y[i]; ym /= N
@@ -239,9 +258,21 @@ class Brain(ctx: Context) {
         val den = r[bi - 1] - 2 * r[bi] + r[bi + 1]
         val lag = bi + if (den < 0) max(-0.5, min(0.5, 0.5 * (r[bi - 1] - r[bi + 1]) / den)) else 0.0
         val nb = (6000 / lag).toFloat()
-        if (bpm == 0f) bpm = nb
-        else if (abs(nb - bpm) / bpm < 0.05f) { bpm += (nb - bpm) * 0.4f; tDisagree = 0 }
-        else if (++tDisagree >= 3) { bpm = nb; tDisagree = 0 }
+        var r0 = 0.0; for (i in 0 until N) r0 += (y[i] - ym) * (y[i] - ym); r0 /= N
+        val conf = (r[bi] / (r0 + 1e-9)).toFloat()
+        // ONE BPM PER SONG: a quick first guess, then it locks once the beat has agreed with itself; only ~8 s of a clear,
+        // steady, different beat (or a new song) can change it
+        if (tempoReset) { tempoReset = false; locked = 0f; tHist.clear(); bpm = 0f }
+        tHist.addLast(floatArrayOf(nb, conf)); if (tHist.size > 20) tHist.removeFirst()
+        fun near(a: Float, b: Float, tol: Float) = abs(a - b) / b < tol
+        fun sure(n: Int, c: Float): Boolean { if (tHist.size < n) return false; for (k in tHist.size - n until tHist.size) { val v = tHist[k]; if (v[1] < c || !near(v[0], nb, 0.025f)) return false }; return true }
+        if (locked == 0f) {
+            if (conf >= 0.2f) bpm = if (bpm > 0) bpm + (nb - bpm) * 0.5f else nb
+            if (sure(5, 0.3f)) { var sm = 0f; for (k in tHist.size - 5 until tHist.size) sm += tHist[k][0]; locked = sm / 5; bpm = locked }
+        } else {
+            if (conf >= 0.3f && near(nb, locked, 0.03f)) { locked += (nb - locked) * 0.1f; bpm = locked }
+            if (sure(16, 0.35f) && !near(nb, locked, 0.05f)) { locked = nb; bpm = nb }
+        }
     }
 
     // ---------------- per frame: same as the web page's analyse() ----------------

@@ -13,7 +13,10 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1"
+        // key that lets the app upload its learning records (set as the NOCTURNE_UPLOAD_TOKEN secret on GitHub)
+        buildConfigField("String", "UPLOAD_TOKEN", "\"" + (System.getenv("NOCTURNE_UPLOAD_TOKEN") ?: "") + "\"")
     }
+    buildFeatures { buildConfig = true }
 
     buildTypes {
         release {
