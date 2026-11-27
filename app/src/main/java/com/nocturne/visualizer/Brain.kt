@@ -374,7 +374,7 @@ class Brain(ctx: Context) {
             else min(0.8f, max(0f, (loudS - 0.04f) / 0.45f))
         val taught = if (live) taughtEnergy() else -1f
         if (taught >= 0) Et = taught else Et = min(1f, max(0f, 0.5f + (Et - 0.5f) * 1.3f))
-        E += (Et - E) * min(1f, dt * (if (Et > E) 14f else 3f))      // rises instantly with the song, eases back down
+        E += (Et - E) * min(1f, dt * (if (Et > E) 14f else 0.7f))    // rises instantly with the song, eases back down slowly (no dips between beats)
         val gate = min(1f, max(0f, (loudS - 0.02f) / 0.08f))
         Eg = gate * (0.3f + 0.7f * E)
         int_ = 0.45f + 1.7f * E.pow(1.3f)
