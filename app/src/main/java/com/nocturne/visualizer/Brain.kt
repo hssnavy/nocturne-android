@@ -78,7 +78,7 @@ class Brain(ctx: Context) {
     val shake = FloatArray(2)
     var live = false; private set
     // wave strings
-    val strWK = FloatArray(7) { 8f }; val strGlow = FloatArray(7); private val strAct = FloatArray(7); private val strCAvg = FloatArray(7) { 0.5f }; var bgT = 0f; private val strPk = FloatArray(7) { -60f }; val strL = FloatArray(7); val strP = FloatArray(7); val strHit = FloatArray(7); val strAge = FloatArray(7) { 9f }
+    val strWK = FloatArray(7) { 8f }; val strGlow = FloatArray(7); private val strAct = FloatArray(7); private val strRest = FloatArray(7); private val strCAvg = FloatArray(7) { 0.5f }; var bgT = 0f; private val strPk = FloatArray(7) { -60f }; val strL = FloatArray(7); val strP = FloatArray(7); val strHit = FloatArray(7); val strAge = FloatArray(7) { 9f }
     private val strS = FloatArray(7); private val strSt = FloatArray(7); private val strLast = DoubleArray(7)
     private val strHist = Array(7) { ArrayDeque<Float>() }; private val strPrev = FloatArray(TONE_N); private var strN = -1
     var waveK = 6f
@@ -428,7 +428,7 @@ class Brain(ctx: Context) {
     // ---------------- the Wave's strings ----------------
     private fun strings(dt: Float, now: Double) {
         val NS = strings
-        if (NS != strN) { strN = NS; strL.fill(0f); strS.fill(0f); strSt.fill(0f); strP.fill(0f); strHit.fill(0f); strAge.fill(9f); strLast.fill(0.0); strHist.forEach { it.clear() }; strPrev.fill(0f); strPk.fill(-60f); strWK.fill(8f); strAct.fill(0f); strGlow.fill(0f); strCAvg.fill(0.5f) }
+        if (NS != strN) { strN = NS; strL.fill(0f); strS.fill(0f); strSt.fill(0f); strP.fill(0f); strHit.fill(0f); strAge.fill(9f); strLast.fill(0.0); strHist.forEach { it.clear() }; strPrev.fill(0f); strPk.fill(-60f); strWK.fill(8f); strAct.fill(0f); strGlow.fill(0f); strCAvg.fill(0.5f); strRest.fill(0f) }
         for (b in 0 until NS) {
             // its part of 20 Hz-20 kHz: an equal share, overlapping its neighbours a little (7.5% each side)
             val i0 = max(0, floor(TONE_N * (b - 0.075) / NS).toInt()); val i1 = min(TONE_N, ceil(TONE_N * (b + 1.075) / NS).toInt())
@@ -439,8 +439,11 @@ class Brain(ctx: Context) {
             // 1. amplitude: how loud its part is now against its own loudest lately
             strPk[b] = max(dmax, max(strPk[b] - dt * 0.5f, -80f))
             val lvl = if (live && dmax > -150) max(0f, min(1.2f, (dmax - (strPk[b] - 30)) / 30)) else 0f
-            val lt = min(1.8f, lvl * g)
-            strL[b] = if (lt > strL[b]) lt else strL[b] + (lt - strL[b]) * min(1f, dt * (6 + 6 * fr))
+            // bounce: every rise above its part's resting level throws the string up, then it drops back fast
+            strRest[b] += (lvl - strRest[b]) * min(1f, dt * (if (lvl < strRest[b]) 12f else 1.2f))
+            val bounce = max(0f, lvl - strRest[b]) * 2.4f
+            val lt = min(1.8f, (lvl * 0.45f + bounce) * g)
+            strL[b] = if (lt > strL[b]) lt else strL[b] + (lt - strL[b]) * min(1f, dt * (9 + 6 * fr))
             // 2. wavelength: where the sound sits inside its part, compared with a moment ago
             val cen = if (cs > 0.05f) cw / cs / max(1, i1 - i0 - 1) else 0.5f
             strCAvg[b] += (cen - strCAvg[b]) * min(1f, dt / 2)
