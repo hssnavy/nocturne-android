@@ -107,7 +107,7 @@ class Brain(ctx: Context) {
     private val Lw = floatArrayOf(11.219f, 7.601f, 3.773f, -9.891f, 2.944f, 74.595f)
     private val Lmu = floatArrayOf(-0.60193f, -13.11202f, -1.56391f, 0.00146f, 0.02994f)
     private val Lsd = floatArrayOf(7.46035f, 5.27088f, 2.51173f, 0.00361f, 0.00503f)
-    private var Lx: FloatArray? = null; private var Lpk = 0f; private var LkickL = 0f; private var LE = -1f
+    private var Lx: FloatArray? = null; private var Lxf: FloatArray? = null; private var Lpk = 0f; private var LkickL = 0f; private var LE = -1f
     private val Lprev = IntArray(512); private var primed = false; private var pos = -1L
     private val subH = ArrayDeque<Double>(); private var subPk = Double.NaN; private var subAvg = Double.NaN; private var subT = 0
     // tempo
@@ -126,7 +126,7 @@ class Brain(ctx: Context) {
     }
 
     private fun resetSource() {
-        Lx = null; pos = -1; LE = -1f; primed = false; subH.clear(); subPk = Double.NaN; subAvg = Double.NaN
+        Lx = null; Lxf = null; pos = -1; LE = -1f; primed = false; subH.clear(); subPk = Double.NaN; subAvg = Double.NaN
         tFilled = 0; tPos = 0; bpm = 0f; tDisagree = 0; tHops = 0
         hsV = 0f; hsB = 0f; hsE = 0f
     }
@@ -137,7 +137,7 @@ class Brain(ctx: Context) {
         val v = demoV ?: return -1f
         val p = Engine.demoPos; if (p < 0) return -1f
         val c = p / demoStep; var sw = 0.0; var sv = 0.0
-        for (d in -8..8) { val i = c.roundToInt() + d; if (i in v.indices && v[i] >= 0) { val g = exp(-0.5 * (d / 4.0) * (d / 4.0)); sw += g; sv += g * v[i] } }
+        for (d in -4..4) { val i = c.roundToInt() + d; if (i in v.indices && v[i] >= 0) { val g = exp(-0.5 * (d / 1.5) * (d / 1.5)); sw += g; sv += g * v[i] } }
         return if (sw > 0.5) (sv / sw / 10).toFloat() else -1f
     }
 
@@ -194,13 +194,18 @@ class Brain(ctx: Context) {
             if (raw[3] < -90) continue
             val X = Lx ?: raw.copyOf().also { Lx = it; Lpk = raw[3]; LkickL = raw[4] }
             for (j in 0 until 5) X[j] += (raw[j] - X[j]) * (0.01f / 3)
+            val XF = Lxf ?: raw.copyOf().also { Lxf = it }
+            for (j in 0 until 5) XF[j] += (raw[j] - XF[j]) * (0.01f / 0.4f)      // same features, 0.4 s: a rise shows at once
             Lpk = max(X[3], Lpk - 0.1f * 0.01f)
             LkickL += (raw[4] - LkickL) * (0.01f / 30)
         }
         val X = Lx ?: return
         val f = floatArrayOf(X[0] - X[1], X[2] - X[1], X[3] - Lpk, X[4] - LkickL, X[4])
         var e = Lw[5]; for (j in 0 until 5) e += Lw[j] * (f[j] - Lmu[j]) / Lsd[j]
-        LE = min(1f, max(0f, e / 100))
+        val XF = Lxf ?: X
+        val ff = floatArrayOf(XF[0] - XF[1], XF[2] - XF[1], XF[3] - Lpk, XF[4] - LkickL, XF[4])
+        var ef = Lw[5]; for (j in 0 until 5) ef += Lw[j] * (ff[j] - Lmu[j]) / Lsd[j]
+        LE = min(1f, max(0f, max(e, ef) / 100))          // instant up, settled down
     }
 
     private fun tempoHop(T: IntArray, hz: Double) {
@@ -369,7 +374,7 @@ class Brain(ctx: Context) {
             else min(0.8f, max(0f, (loudS - 0.04f) / 0.45f))
         val taught = if (live) taughtEnergy() else -1f
         if (taught >= 0) Et = taught else Et = min(1f, max(0f, 0.5f + (Et - 0.5f) * 1.3f))
-        E += (Et - E) * min(1f, dt * (if (taught >= 0) 4 else 3))
+        E += (Et - E) * min(1f, dt * (if (Et > E) 14f else 3f))      // rises instantly with the song, eases back down
         val gate = min(1f, max(0f, (loudS - 0.02f) / 0.08f))
         Eg = gate * (0.3f + 0.7f * E)
         int_ = 0.45f + 1.7f * E.pow(1.3f)
