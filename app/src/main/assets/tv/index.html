@@ -3,7 +3,8 @@
 <title>Nocturne</title>
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none}
-canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;z-index:1}
+#msg,#credit{z-index:2}
 #msg{position:fixed;left:0;right:0;bottom:6vh;text-align:center;font:500 22px/1.4 system-ui,sans-serif;color:#e9edf2;opacity:.75;letter-spacing:.02em;transition:opacity .8s}
 #credit{position:fixed;left:2.2vw;bottom:2vh;font:12px system-ui,sans-serif;color:#e9edf2;opacity:.28;letter-spacing:.05em}
 </style></head>
@@ -11,7 +12,7 @@ canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block}
 <canvas id="gl"></canvas>
 <div id="msg">Connecting to Nocturne on your phone…</div>
 <div id="credit">by Hassan Al-Yunis</div>
-<video id="awake" muted loop playsinline autoplay style="position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none"><source src="/awake.mp4" type="video/mp4"><source src="/awake.webm" type="video/webm"></video>
+<video id="awake" muted loop playsinline autoplay style="position:fixed;left:0;top:0;width:100vw;height:100vh;object-fit:cover;z-index:0;pointer-events:none;background:#000"><source src="/awake.mp4" type="video/mp4"><source src="/awake.webm" type="video/webm"></video>
 <script>
 // Nocturne TV: the phone listens and analyses; this page only draws, at the TV's own resolution.
 const msg = document.getElementById('msg');
@@ -109,14 +110,15 @@ function frame(now){
   const dt = Math.min(0.1, (now - last)/1000); last = now;
   if(!PS) return;
   // full TV resolution (the browser's pixels x its device pixel ratio, up to 4K), stepping down only if the TV can't keep up
-  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const dpr = Math.min(window.devicePixelRatio || 1, 3), res = Math.round(F[45] || 0);   // 0 auto, 1 Full HD, 2 4K
   let W = Math.floor(innerWidth*dpr), H = Math.floor(innerHeight*dpr);
+  if(res){ const long = res === 2 ? 3840 : 1920, a = innerWidth/innerHeight; if(a >= 1){ W = long; H = Math.round(long/a); } else { H = long; W = Math.round(long*a); } perf.step = 0; perf.dts.length = 0; }
   const cap = perf.step >= 3 ? 1920*1080 : perf.step >= 2 ? 2560*1440 : 3840*2160;
   if(W*H > cap){ const k = Math.sqrt(cap/(W*H)); W = Math.floor(W*k); H = Math.floor(H*k); }
-  if(W*H > 3840*2160){ const k = Math.sqrt(3840*2160/(W*H)); W = Math.floor(W*k); H = Math.floor(H*k); }
+  if(!res && W*H > 3840*2160){ const k = Math.sqrt(3840*2160/(W*H)); W = Math.floor(W*k); H = Math.floor(H*k); }
   if(canvas.width !== W || canvas.height !== H){ canvas.width = W; canvas.height = H; }
   perf.dts.push(dt); if(perf.dts.length > 120) perf.dts.shift();
-  if(perf.dts.length >= 60 && now - perf.last > 900){ const s = [...perf.dts].sort((a,b)=>a-b), ref = Math.min(Math.max(s[Math.floor(s.length*0.1)], 1/62), 1/57), rec = perf.dts.slice(-30).reduce((a,b)=>a+b,0)/30;
+  if(!res && perf.dts.length >= 60 && now - perf.last > 900){ const s = [...perf.dts].sort((a,b)=>a-b), ref = Math.min(Math.max(s[Math.floor(s.length*0.1)], 1/62), 1/57), rec = perf.dts.slice(-30).reduce((a,b)=>a+b,0)/30;
     if(rec > ref*1.15 && perf.step < SCALES.length-1){ perf.step++; perf.last = now; perf.good = now; } else if(rec < ref*1.08){ if(now - perf.good > 4000 && perf.step > 0){ perf.step--; perf.last = now; perf.good = now; } } else perf.good = now; }
   const w = Math.max(2, Math.round(W*SCALES[perf.step])), h = Math.max(2, Math.round(H*SCALES[perf.step]));
   ensure(w, h);
@@ -127,7 +129,7 @@ function frame(now){
     const b = Q[i], a = Q[Math.max(0, i-1)];
     let k = (a === b || b.f[3] <= a.f[3]) ? 1 : (pt - a.f[3])/(b.f[3] - a.f[3]); k = Math.max(0, Math.min(1, k));
     for(let j = 0; j < 112; j++) F[j] = a.f[j] + (b.f[j] - a.f[j])*k;
-    for(const j of [0,1,2,19,34,35,36,37,38,39,40,41,42,43,44]) F[j] = b.f[j];
+    for(const j of [0,1,2,19,34,35,36,37,38,39,40,41,42,43,44,45]) F[j] = b.f[j];
     for(let j = 0; j < 1024; j++) U8[j] = a.u[j] + (b.u[j] - a.u[j])*k;
     while(Q.length > 2 && Q[1].f[3] < pt) Q.shift();
   }
@@ -136,7 +138,8 @@ function frame(now){
   const style = live ? Math.round(F[1]) : 2, pi = Math.round(F[2]);
   if(pics.length && pi !== cur.i && pi >= 0 && pi < pics.length) loadPic(pi);
   const key = pi + '|' + style; if(T.key !== key){ T.key = key; T.acc.forEach(x => { gl.bindFramebuffer(gl.FRAMEBUFFER, x.f); gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT); }); }
-  if(!live){ gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT); return; }
+  if(!live){ if(started && now - lastData > 3000){ msg.style.opacity = .75; msg.textContent = 'Waiting for the phone… keep Nocturne running on it'; } return; }
+  if(msg.textContent.startsWith('Waiting')){ msg.style.opacity = 0; msg.textContent = ''; }
   if(!cur.tex) return;
   const up = (t, u, off, n) => { gl.activeTexture(gl.TEXTURE0 + u); gl.bindTexture(gl.TEXTURE_2D, t); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, n, 1, gl.RED, gl.UNSIGNED_BYTE, U8.subarray(off, off + n)); };
   up(specT, 1, 0, 128); up(peakT, 2, 128, 128); up(waveT, 3, 256, 256); up(toneT, 4, 512, 256); up(toneST, 5, 768, 256);

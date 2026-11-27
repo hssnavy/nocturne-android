@@ -191,7 +191,7 @@ class Brain(ctx: Context) {
                 subAvg = if (subAvg.isNaN()) sdb else subAvg + (sdb - subAvg) * 0.01
                 var lo = Double.MAX_VALUE; for (j in 0 until subH.size - 1) lo = min(lo, subH[j])
                 val rise = sdb - lo
-                if (subH.size >= 4 && rise > 8 && sdb > subAvg + 3 && sdb > subPk - 6 && subT > max(25.0, if (bpm > 0) 0.7 * 6000 / bpm else 0.0)) {
+                if (subH.size >= 4 && rise > 8 && gate > 0.5f && sdb > subAvg + 3 && sdb > subPk - 6 && subT > max(25.0, if (bpm > 0) 0.7 * 6000 / bpm else 0.0)) {
                     val ks = min(1.0, 0.65 + (rise - 8) / 14).toFloat(); subT = 0
                     core = max(core, ks)
                     hit[0] = max(hit[0], ks * min(1f, 0.4f + Eg))
@@ -200,12 +200,16 @@ class Brain(ctx: Context) {
                 }
             }
             val raw = floatArrayOf(pw(T, hz, 60.0, 200.0), pw(T, hz, 200.0, 800.0), pw(T, hz, 3000.0, 10000.0), pw(T, hz, 0.0, sr / 2.0), (k / max(1, kn)).toFloat())
+            // silence gate: loudness against the fixed reference; below it nothing moves and nothing re-adapts, however long
+            lv = if (lv.isNaN()) raw[3] else lv + (raw[3] - lv) * (if (raw[3] > lv) 0.2f else 0.01f / 0.25f)
+            gate = max(0f, min(1f, (lv - (ref() - 34)) / 8))
             // 1.2 s of silence (between songs) -> the next sound is a new song
             if (raw[3] < -60) { quiet++; if (quiet > 120) newSong = true; continue }
             quiet = 0
             if (Lx == null || newSong) {
-                // a new song: its loudest point is assumed to be still ahead (8 dB above the opening) until it gets there
-                Lx = raw.copyOf(); Lxf = raw.copyOf(); Lpk = raw[3] + 8; LkickL = raw[4]; songAge = 0f; newSong = false
+                // a new song (after 1.2 s of silence): only the tempo starts over. Loudness is judged against a fixed
+                // reference, so starting or seeking anywhere in a song reads the same as playing it through
+                Lx = raw.copyOf(); Lxf = raw.copyOf(); if (LkickL == 0f) LkickL = 0.03f; songAge = 0f; newSong = false
                 tempoReset = true; songStarted = true
             }
             songAge += 0.01f
@@ -213,8 +217,8 @@ class Brain(ctx: Context) {
             for (j in 0 until 5) X[j] += (raw[j] - X[j]) * (0.01f / 3)
             val XF = Lxf!!
             for (j in 0 until 5) XF[j] += (raw[j] - XF[j]) * (0.01f / 0.4f)      // same features, 0.4 s: a rise shows at once
-            Lpk = max(X[3], Lpk - 0.1f * 0.01f)
-            LkickL += (raw[4] - LkickL) * (0.01f / 30)
+            Lpk = ref()                                                  // constant: moves only with Sensitivity
+            LkickL += (min(raw[4], 0.1f) - LkickL) * (0.01f / 8)        // usual kick strength over ~8 s (a seek settles fast)
         }
         val X = Lx ?: return
         val f = floatArrayOf(X[0] - X[1], X[2] - X[1], X[3] - Lpk, X[4] - LkickL, X[4])
@@ -222,9 +226,15 @@ class Brain(ctx: Context) {
         val XF = Lxf ?: X
         val ff = floatArrayOf(XF[0] - XF[1], XF[2] - XF[1], XF[3] - Lpk, XF[4] - LkickL, XF[4])
         var ef = Lw[5]; for (j in 0 until 5) ef += Lw[j] * (ff[j] - Lmu[j]) / Lsd[j]
-        val open = 0.6f + 0.4f * min(1f, songAge / 20)       // songs open calmer than they get
-        LE = min(1f, max(0f, max(e, ef) / 100 * open))          // instant up, settled down
+        LE = min(1f, max(0f, max(e, ef) / 100)) * gate          // instant up, settled down; nothing in silence
     }
+
+    /** The loudness that counts as "full": fixed (-20 dB, fitted to the taught demo track), 12 dB lower for the microphone.
+     *  Sensitivity moves it: x2 sensitivity = 12 dB more sensitive. */
+    private fun ref(): Float = (if (Engine.status.startsWith("mic")) -32f else -20f) - 12f * log2(max(0.3f, Settings.sens) / 1.1f)
+    private var lv = Float.NaN
+    /** 0 in silence, 1 with sound. */
+    var gate = 1f; private set
 
     private fun tempoHop(T: IntArray, hz: Double) {
         val top = min(512, ceil(5000 / hz).toInt())
@@ -306,13 +316,14 @@ class Brain(ctx: Context) {
                 toneDb[i] = d; if (d > tmax) tmax = d
                 val rg = if (i < 86) 0 else if (i < 171) 1 else 2; if (d > rmax[rg]) rmax[rg] = d
             }
-            for (r in 0 until 3) pkR[r] = max(rmax[r], max(pkR[r] - dt * 1.5f, -75f))
+            val G = gate
+            for (r in 0 until 3) pkR[r] = max(rmax[r], max(pkR[r] - dt * 1.5f * G, -75f))
             for (i in 0 until TONE_N) {
                 val d = toneDb[i]
                 if (d > -150) toneFl[i] += (d - toneFl[i]) * min(1f, dt * (if (d < toneFl[i]) 5f else 0.025f))
                 val pk = pkR[if (i < 86) 0 else if (i < 171) 1 else 2]
                 val ref = max(toneFl[i] + 3, pk - 45)
-                var t = min(1.2f, max(0f, (d - ref) / (pk + 2 - ref + 1e-3f)) * sens)
+                var t = min(1.2f, max(0f, (d - ref) / (pk + 2 - ref + 1e-3f)) * sens) * G
                 if (d < -150) t = 0f
                 toneV[i] = if (t > toneV[i]) t else toneV[i] + (t - toneV[i]) * min(1f, dt * 22)
                 toneBytes[i] = min(255f, toneV[i] * 196).toInt().toByte()
@@ -320,10 +331,10 @@ class Brain(ctx: Context) {
             // strings' tone map: every bin against its own recent peak (falls 2 dB/s)
             for (i in 0 until TONE_N) {
                 val d = toneDb[i]
-                pkB[i] = max(d, max(pkB[i] - dt * 2, -90f))
+                pkB[i] = max(d, max(pkB[i] - dt * 2 * G, -90f))
                 flS[i] += (d - flS[i]) * min(1f, dt * (if (d < flS[i]) 5f else 0.006f))
                 val ref = max(flS[i] + 3, pkB[i] - 36)
-                var t = min(1.2f, max(0f, (d - ref) / (pkB[i] + 1 - ref + 1e-3f)) * sens)
+                var t = min(1.2f, max(0f, (d - ref) / (pkB[i] + 1 - ref + 1e-3f)) * sens) * G
                 if (d < -150) t = 0f
                 toneVs[i] = if (t > toneVs[i]) t else toneVs[i] + (t - toneVs[i]) * min(1f, dt * 22)
                 toneSBytes[i] = min(255f, toneVs[i] * 196).toInt().toByte()
@@ -339,7 +350,7 @@ class Brain(ctx: Context) {
             gpk = max(gpk * 0.93f.pow(dt), max(gmax, 0.25f))
             for (i in 0 until SPEC_N) {
                 binAvg[i] += (tmp[i] - binAvg[i]) * min(1f, dt / 3)
-                val nov = min(1.2f, max(0f, (tmp[i] - binAvg[i]) / (binAvg[i] * 0.6f + 0.03f)))
+                val nov = min(1.2f, max(0f, (tmp[i] - binAvg[i]) / (binAvg[i] * 0.6f + 0.03f))) * G
                 val ti = max(0, min(TONE_N - 2, (TONE_N * ln(30 * (16000.0 / 30).pow((i + 0.5) / SPEC_N) / 20) / ln(1000.0)).roundToInt()))
                 val tv = max(toneV[ti], toneV[ti + 1])
                 val v = min(1.25f, tv * 0.8f + nov * 0.35f * sens)
@@ -373,7 +384,7 @@ class Brain(ctx: Context) {
             val k = min(1f, dt * 6)
             for (i in 0 until WAVE_N) {
                 var sum = 0; for (j in -3..3) sum += tdata[max(0, min(1023, start + i * 3 + j))] - 128
-                waveF[i] += (sum / 7f * wgain - waveF[i]) * k
+                waveF[i] += (sum / 7f * wgain * gate - waveF[i]) * k
                 waveBytes[i] = max(0f, min(255f, 128 + waveF[i])).toInt().toByte()
             }
         } else {
@@ -477,8 +488,8 @@ class Brain(ctx: Context) {
             val fr = if (NS > 1) b.toFloat() / (NS - 1) else 0.5f
             val g = 1 + 0.2f * min(1f, fr * 2) + 0.3f * max(0f, fr * 2 - 1)
             // 1. amplitude: how loud its part is now against its own loudest lately
-            strPk[b] = max(dmax, max(strPk[b] - dt * 0.5f, -80f))
-            val lvl = if (live && dmax > -150) max(0f, min(1.2f, (dmax - (strPk[b] - 30)) / 30)) else 0f
+            strPk[b] = max(dmax, max(strPk[b] - dt * 0.5f * gate, -80f))
+            val lvl = if (live && dmax > -150) gate * max(0f, min(1.2f, (dmax - (strPk[b] - 30)) / 30)) else 0f
             // bounce: every rise above its part's resting level throws the string up, then it drops back fast
             strRest[b] += (lvl - strRest[b]) * min(1f, dt * (if (lvl < strRest[b]) 12f else 1.2f))
             val bounce = max(0f, lvl - strRest[b]) * 2.4f

@@ -56,8 +56,7 @@ input[type=range]{accent-color:var(--ember);width:150px}
 .ch.hit span{color:#fff}
 .panel{position:relative}
 #minBtn{position:absolute;top:6px;right:6px;width:28px;height:24px;padding:0;border:0;border-radius:8px;display:grid;place-items:center;background:transparent;color:var(--muted, #8a93a0)}
-#credit{position:absolute;right:12px;bottom:5px;font-size:10px;letter-spacing:.04em;opacity:.35;pointer-events:none;user-select:none}
-.panel{padding-bottom:16px}
+#credit{position:fixed;left:max(16px,env(safe-area-inset-left,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 10px);z-index:3;font-size:11px;letter-spacing:.05em;color:#e9edf2;opacity:.3;pointer-events:none;user-select:none}
 #minBtn:hover,#maxBtn:hover{color:var(--fg, #e9edf2)}
 .panel{padding-right:40px}
 #maxBtn{display:none;position:absolute;right:max(14px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 14px);width:40px;height:32px;padding:0;border-radius:10px;color:var(--fg, #e9edf2);background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
@@ -107,11 +106,11 @@ input[type=range]{accent-color:var(--ember);width:150px}
   <div class="rows" id="rows"></div>
 </div>
 
+<div id="credit">by Hassan Al-Yunis</div>
 <div class="bar">
   <button id="maxBtn" aria-label="Show the controls" title="Show controls"><svg width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M2 8l6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   <div class="panel">
     <button id="minBtn" aria-label="Minimise the controls" title="Minimise"><svg width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M2 2l6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-    <span id="credit">by Hassan Al-Yunis</span>
     <div class="group">
       <button class="icon" id="prev" aria-label="Previous picture">‹</button>
       <button id="pics">Pictures</button>
@@ -174,17 +173,17 @@ const STYLES = [
   {id:'hyper',   name:'Light speed',   fb:{zoom:1.010, rot:0,      shift:[0,0],      decay:0.72}},
 ];
 
-const DEFAULTS = {aggcolor:'on', trip:0.5, peakred:'on', sens:0.9, response:'instant', bars:48, peaks:'fast', layout:'bottom', bass:'left', seg:'off', color:'picture', trails:'short', flash:'on', shake:'on',
+const DEFAULTS = {aggcolor:'on', trip:0.5, peakred:'on', sens:1.1, response:'instant', bars:48, peaks:'fast', layout:'bottom', bass:'left', seg:'off', color:'picture', trails:'short', flash:'on', shake:'on',
   quality:'auto', strings:3};
 let S = Object.assign({}, DEFAULTS);
 let styleByPic = {};
 try {
   const st = JSON.parse(localStorage.getItem('nocturne10') || '{}');
   if(st.S) S = Object.assign({}, DEFAULTS, st.S);
-  if(!st.sens09 && (+S.sens === 1.2 || +S.sens === 1)) S.sens = 0.9;   // default sensitivity 0.9 (once; a value you set yourself stays)
+  if(!st.sens11 && [0.9, 1, 1.2].includes(+S.sens)) S.sens = 1.1;   // default sensitivity 1.1 (once; a value you set yourself stays)
   if(st.styles) styleByPic = st.styles;
 } catch(e){}
-function save(){ try { localStorage.setItem('nocturne10', JSON.stringify({S, styles:styleByPic, p:picIndex, sens09:true})); } catch(e){} }
+function save(){ try { localStorage.setItem('nocturne10', JSON.stringify({S, styles:styleByPic, p:picIndex, sens11:true})); } catch(e){} }
 
 const SETTINGS = [
   {k:'sens', label:'Sensitivity', type:'range', min:0.3, max:3, step:0.05, hint:'Raise it for quiet music or the microphone.'},
@@ -234,7 +233,8 @@ uniform sampler2D uTex, uSpec, uPeak, uWave, uTone, uToneS;
 uniform vec3 uPal0, uPal1, uPal2, uPal3;
 uniform vec2 uRes, uShake;
 // lows / mids / highs: smoothed level (1 ~ typical for this song), hits (0-1, transients), and their own clocks
-uniform float uLowA, uWaveK, uNStr, uCore, uKAge, uTravel, uSpeed, uSpin, uHyE; uniform float uStr[7]; uniform float uFlow[7]; uniform float uSHit[7]; uniform float uSAge[7]; uniform float uSWK[7];
+uniform float uBgT, uE;
+uniform float uLowA, uWaveK, uNStr, uCore, uKAge, uTravel, uSpeed, uSpin, uHyE; uniform float uStr[7]; uniform float uFlow[7]; uniform float uSHit[7]; uniform float uSAge[7]; uniform float uSWK[7]; uniform float uSGlow[7];
 uniform float uLow, uMid, uHigh, uLowHit, uMidHit, uHighHit, uLowT, uMidT, uHighT;
 // 10-band equaliser channels (31 Hz ... 16 kHz) + the .1 sub channel (index 10)
 uniform float uCh[11]; uniform float uChHit[11];
@@ -330,10 +330,20 @@ void main(){
     col += step(0.45,h1)*(1.-smoothstep(0.,0.008,abs(r-pr)))*(1.-smoothstep(0.1,0.4,abs(fract(fract(ang/TAU)*180.)-0.5)))*pal(h1)*(uHigh*2.2 + uHighHit*1.5);
   }
   else if(uMode < 2.5){ // WAVE  ten sections, one per channel: 31 Hz on the left ... 16 kHz on the right; .1 sub lifts the whole line
-    float smoke = uEnergy*uEnergy*0.9 + uLowHit*0.15;                         // smoke grows with the song's energy
-    vec2 wv = vec2(fbm(q*1.6+vec2(uMidT*0.3,0.)), fbm(q*1.6+vec2(4.,uMidT*0.22))) - 0.5;
-    vec3 sm = textureLod(uTex, cover(q*0.6 + wv*(0.9 + uEnergy*0.4)), 5.).rgb;
-    col += sm*smoothstep(0.02, 0.12, luma(sm))*smoke*0.7;
+    // BACKGROUND (the strings are untouched): living smoke whose amount, drift, colour and shadows follow the energy.
+    // Calm: a faint, slow, cool haze. Rising energy: thicker smoke that drifts faster, warms in hue and casts deeper
+    // moving shadows; each kick puffs it a little.
+    float E = uEnergy;
+    float smoke = 0.16 + 1.3*E*E + uCore*0.3*E;
+    vec2 wv = vec2(fbm(q*1.6 + vec2(uBgT*0.5, 0.)), fbm(q*1.6 + vec2(4., uBgT*0.37))) - 0.5;
+    vec2 wv2 = vec2(fbm(q*0.8 - vec2(uBgT*0.23, 1.3)), fbm(q*0.8 + vec2(2.1, -uBgT*0.19))) - 0.5;   // a slower, deeper layer
+    vec3 sm = textureLod(uTex, cover(q*0.6 + wv*(0.8 + E*0.6)), 5.).rgb;
+    vec3 sm2 = textureLod(uTex, cover(q*0.35 + wv2*(0.6 + E*0.5) + 0.3), 6.).rgb;
+    vec3 bg = sm*smoothstep(0.02, 0.12, luma(sm))*0.7 + sm2*smoothstep(0.02, 0.12, luma(sm2))*0.35*(0.4 + E);
+    bg = hueRot(bg, sin(uBgT*0.11)*0.22 + E*0.3);                                // hue drifts, and shifts as energy rises
+    float sh = smoothstep(0.42, 0.72, fbm(q*1.2 + vec2(-uBgT*0.3, uBgT*0.12)));  // moving shadows
+    bg *= 1. - sh*(0.25 + 0.55*E);
+    col += bg*smoke;
     float X = q.x;
     float xe = clamp((x01 - 0.06)/0.88, 0., 1.);
     float bp = clamp(xe*10. - 0.5, 0., 9.);                       // channel under this point
@@ -355,24 +365,37 @@ void main(){
       float fr = n > 1.5 ? fk/(n - 1.) : 0.5;                       // 0 = lowest string, 1 = highest
       float hit = uSHit[k], age = uSAge[k];
       float kick = k == 0 ? uCore : 0.;                              // the kick drum lives in the lowest slice: only that string takes it
-      float amp = min(min(uStr[k]*(0.06 + 0.14*uEnergy), capE)*(1. - 0.3*fr)*(1. + 0.7*hit + 0.6*kick), 0.34);   // never off the screen
-      float tl = tnS((fk + (1. - x01))/n);                          // every tone of its slice, each against its own peak (low end at the right)
+      float amp = 0.85*min(min(uStr[k]*(0.06 + 0.14*uEnergy), capE)*(1. - 0.3*fr)*(1. + 0.7*hit + 0.6*kick), 0.34);   // never off the screen (overall 15% lower)
+      float s0 = max(0., (fk - 0.075)/n), s1 = min(1., (fk + 1.075)/n);   // its part of the spectrum (overlaps a little)
+      float tp = s0 + (1. - x01)*(s1 - s0);                        // low end of its part at the right
+      float tl = tnS(tp);
       float w = uSWK[k];                                            // its own wavelength (only its own frequencies change it)
       float flow = uFlow[k];
       float y = sin(Xr*w - flow + fk*2.1)*0.7 + sin(Xr*w*0.43 - flow*0.6 + fk*1.3)*0.3;
       y *= 0.3 + 0.95*tl;
       y += sin(Xr*(18. + fr*28.) - flow*1.7 + fk)*tl*0.22;
       y *= amp*envR;
+      // every tone as its own peak: a note that stands out from its neighbours lifts the string right at its frequency.
+      // Added on top (not multiplied by the wave), so a note can't vanish where the wave happens to cross the middle.
+      float dl = 2.5/256.;
+      float tc = max(0., tl - 0.5*(tnS(tp - dl) + tnS(tp + dl)));
+      y += (tc*1.5 + tl*0.25)*(0.03 + 0.05*uEnergy)*(1. + 0.7*fr)*envR;
+      float calm = 0.15 + 0.85*smoothstep(0.1, 0.75, uE);          // low energy: the body of the strings calms down a lot
+      y *= calm;
+      // ...but a single hit in a calm moment still shows clearly, even MORE when the string is resting:
+      // every drum hit in its part throws the whole string and sends a pulse in from the right
+      float boost = 1. + 1.6*(1. - calm);
       float pd = (Xr - age*2.2)/0.09;                               // the beat pulse, running in from the right
-      float pulse = hit*exp(-pd*pd)*(0.05 + 0.07*uEnergy)*envR;
+      float pulse = hit*exp(-pd*pd)*(0.05 + 0.06*uEnergy)*boost*envR;
       y += pulse*(mod(fk, 2.) < 0.5 ? 1. : -1.);
+      y += hit*(sin(Xr*w*1.3 - flow*1.4 + fk)*0.7 + sin(Xr*w*2.7 - flow + fk*0.7)*0.3)*(0.025 + 0.03*uEnergy)*boost*envR;
       float kd = (Xr - uKAge*2.6)/0.14;                             // the kick drum's own wave, rolling in from the right
-      y -= kick*exp(-kd*kd)*(0.05 + 0.08*uEnergy)*envR;
+      y -= kick*exp(-kd*kd)*(0.05 + 0.08*uEnergy)*(0.6 + 0.4*boost)*envR;
       y += (fk - (n - 1.)*0.5)*0.012*min(1., 3./n);                 // strings sit just apart
       float d = abs(q.y - y);
-      float thick = 0.0013 + tl*0.0022 + hit*0.0022;
+      float thick = 0.0013 + tl*0.0022 + hit*0.0022 + tc*0.002;
       vec3 c = mix(pal(0.08 + 0.84*fr), vec3(1.), clamp(tl*0.4 + hit*0.35, 0., 0.7));
-      col += c*(thick/(d+0.0022))*0.34*(0.35 + tl*0.8 + hit*0.5 + kick*0.35)*envR;
+      col += c*(thick/(d+0.0022))*0.34*(uSGlow[k] + tl*0.5)*envR;        // glow: its own loudness and hits, lifted by the song's energy
     }
   }
   else if(uMode < 3.5){ // TUNNEL  lows: forward travel + ring pulses · mids: twist · highs: shimmer stripes
@@ -605,7 +628,7 @@ let genTarget = null;
 const GEN_W = 1920, GEN_H = 1080;
 const SPEC_N = 128, WAVE_N = 256, TONE_N = 256;
 let toneAn = null, toneFreq = null;
-const TONE = {db:new Float32Array(TONE_N).fill(-200), fl:new Float32Array(TONE_N).fill(-100), v:new Float32Array(TONE_N), vs:new Float32Array(TONE_N), pkB:new Float32Array(TONE_N).fill(-90)};
+const TONE = {db:new Float32Array(TONE_N).fill(-200), fl:new Float32Array(TONE_N).fill(-100), v:new Float32Array(TONE_N), vs:new Float32Array(TONE_N), pkB:new Float32Array(TONE_N).fill(-90), flS:new Float32Array(TONE_N).fill(-100)};
 const toneBytes = new Uint8Array(TONE_N), toneSBytes = new Uint8Array(TONE_N);
 const specBytes = new Uint8Array(SPEC_N), peakBytes = new Uint8Array(SPEC_N), waveBytes = new Uint8Array(WAVE_N).fill(128);
 let specTex, peakTex, waveTex, toneTex, toneSTex, blackTex;
@@ -614,7 +637,7 @@ function dataTex(n, data){ const t = gl.createTexture(); gl.bindTexture(gl.TEXTU
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
 if(gl){
-  PS = program(SCENE_FS, ['uTex','uSpec','uPeak','uWave','uPal0','uPal1','uPal2','uPal3','uRes','uShake','uTime','uMid','uHigh','uMode','uBars','uLayout','uBassMid','uSeg','uColor','uInt','uPeakOn','uImgAsp','uAssemble','uLow','uLowHit','uMidHit','uHighHit','uLowT','uMidT','uHighT','uEnergy','uAggr','uCh','uChHit','uTone','uLowA','uWaveK','uStr','uFlow','uNStr','uSHit','uSAge','uCore','uKAge','uTravel','uSpeed','uSpin','uHyE','uToneS','uSWK']);
+  PS = program(SCENE_FS, ['uTex','uSpec','uPeak','uWave','uPal0','uPal1','uPal2','uPal3','uRes','uShake','uTime','uMid','uHigh','uMode','uBars','uLayout','uBassMid','uSeg','uColor','uInt','uPeakOn','uImgAsp','uAssemble','uLow','uLowHit','uMidHit','uHighHit','uLowT','uMidT','uHighT','uEnergy','uAggr','uCh','uChHit','uTone','uLowA','uWaveK','uStr','uFlow','uNStr','uSHit','uSAge','uCore','uKAge','uTravel','uSpeed','uSpin','uHyE','uToneS','uSWK','uSGlow','uBgT','uE']);
   PC = program(COMPOSE_FS, ['uScene','uPrev','uRes','uShift','uZoom','uRot','uDecay','uAberr','uFlash','uFlashCol','uRed','uWarp','uHue','uTime','uAggr']);
   PD = program(DISPLAY_FS, ['uSrc','uRes','uBloom','uExpo']);
   PG = program(SOURCE_FS, ['uSpec','uRes','uTime','uPhase','uBass','uHigh','uLevel','uKick','uGen']);
@@ -784,10 +807,10 @@ function ensureCtx(){
 }
 function stopSource(){
   curAudio = null;
-  TEMPO.filled = 0; TEMPO.lastIdx = 0; TEMPO.disagree = 0; A.bpm = 0;
+  TEMPO.filled = 0; TEMPO.lastIdx = 0; TEMPO.disagree = 0; TEMPO.locked = 0; TEMPO.hist = []; A.bpm = 0;
   stopFns.forEach(f => { try{ f(); }catch(e){} }); stopFns = [];
   srcNodes.forEach(n => { try{ n.disconnect(); }catch(e){} }); srcNodes = [];
-  srcKind = null; markSrc(); LEARN.x = null; LEARN.pos = -1; LEARN.E = -1; LEARN.primed = false;
+  srcKind = null; markSrc(); LEARN.x = null; LEARN.xf = null; LEARN.pos = -1; LEARN.E = -1; LEARN.primed = false;
 }
 function markSrc(){ document.querySelectorAll('#srcs button').forEach(b => b.classList.toggle('on', b.dataset.src === srcKind)); }
 let anDelay = null;
@@ -978,7 +1001,8 @@ function analyse(dt, now){
     // each third of the spectrum (lows 20-200 Hz, mids 200 Hz-2.2 kHz, highs 2.2-20 kHz) is measured against ITS OWN
     // recent peak, so faint highs are as visible on their string as the bass is on its own
     if(!TONE.pkR) TONE.pkR = [-60,-60,-60];
-    for(let r=0;r<3;r++) TONE.pkR[r] = Math.max(rmax[r], TONE.pkR[r] - dt*1.5, -75);
+    const G = LEARN.gate === undefined ? 1 : LEARN.gate;     // 0 in silence: nothing shows and nothing re-adapts
+    for(let r=0;r<3;r++) TONE.pkR[r] = Math.max(rmax[r], TONE.pkR[r] - dt*1.5*G, -75);
     for(let i=0;i<TONE_N;i++){
       const d = TONE.db[i];
       if(d > -150) TONE.fl[i] += (d - TONE.fl[i])*Math.min(1, dt*(d < TONE.fl[i] ? 5 : 0.025));     // floor: drops fast, rises very slowly
@@ -986,7 +1010,7 @@ function analyse(dt, now){
       // still reaches 0.5, one 40 dB down still shows a little. Only the noise floor itself is hidden.
       const pk = TONE.pkR[i < 86 ? 0 : i < 171 ? 1 : 2];
       const ref = Math.max(TONE.fl[i] + 3, pk - 45);
-      let t = Math.min(1.2, Math.max(0, (d - ref)/(pk + 2 - ref + 1e-3))*S.sens);
+      let t = Math.min(1.2, Math.max(0, (d - ref)/(pk + 2 - ref + 1e-3))*S.sens)*G;
       if(d < -150) t = 0;
       TONE.v[i] = t > TONE.v[i] ? t : TONE.v[i] + (t - TONE.v[i])*Math.min(1, dt*22);
       toneBytes[i] = Math.min(255, TONE.v[i]*196);
@@ -995,9 +1019,11 @@ function analyse(dt, now){
     // show on their string as clearly as the loudest bass does on its own; only the noise floor stays hidden
     for(let i=0;i<TONE_N;i++){
       const d = TONE.db[i];
-      TONE.pkB[i] = Math.max(d, TONE.pkB[i] - dt*2, -90);
-      const ref = Math.max(TONE.fl[i] + 3, TONE.pkB[i] - 36);
-      let t = Math.min(1.2, Math.max(0, (d - ref)/(TONE.pkB[i] + 1 - ref + 1e-3))*S.sens);
+      TONE.pkB[i] = Math.max(d, TONE.pkB[i] - dt*2*G, -90);
+      // its own slow floor (rises over minutes): a held high note or a steady shaker doesn't fade out of view
+      TONE.flS[i] += (d - TONE.flS[i])*Math.min(1, dt*(d < TONE.flS[i] ? 5 : 0.006));
+      const ref = Math.max(TONE.flS[i] + 3, TONE.pkB[i] - 36);
+      let t = Math.min(1.2, Math.max(0, (d - ref)/(TONE.pkB[i] + 1 - ref + 1e-3))*S.sens)*G;
       if(d < -150) t = 0;
       TONE.vs[i] = t > TONE.vs[i] ? t : TONE.vs[i] + (t - TONE.vs[i])*Math.min(1, dt*22);
       toneSBytes[i] = Math.min(255, TONE.vs[i]*196);
@@ -1015,7 +1041,7 @@ function analyse(dt, now){
     if(!A.binAvg) A.binAvg = new Float32Array(SPEC_N);
     for(let i=0;i<SPEC_N;i++){
       A.binAvg[i] += (tmp[i] - A.binAvg[i])*Math.min(1, dt/3);
-      const nov = Math.min(1.2, Math.max(0, (tmp[i] - A.binAvg[i])/(A.binAvg[i]*0.6 + 0.03)));
+      const nov = Math.min(1.2, Math.max(0, (tmp[i] - A.binAvg[i])/(A.binAvg[i]*0.6 + 0.03)))*G;
       const ti = Math.max(0, Math.min(TONE_N-2, Math.round(TONE_N*Math.log(30*Math.pow(16000/30, (i+0.5)/SPEC_N)/20)/Math.log(1000))));
       const tv = Math.max(TONE.v[ti], TONE.v[ti+1]);
       const v = Math.min(1.25, tv*0.8 + nov*0.35*S.sens);
@@ -1050,7 +1076,7 @@ function analyse(dt, now){
     const k = Math.min(1, dt*6);
     for(let i=0;i<WAVE_N;i++){
       let sum = 0; for(let j=-3;j<=3;j++) sum += tdata[Math.max(0, start+i*3+j)] - 128;
-      A.waveF[i] += (sum/7*A.wgain - A.waveF[i])*k;
+      A.waveF[i] += (sum/7*A.wgain*G - A.waveF[i])*k;
       waveBytes[i] = Math.max(0, Math.min(255, 128 + A.waveF[i]));
     }
   } else {
@@ -1083,7 +1109,7 @@ function analyse(dt, now){
   A.autoE = Et;
   if(taught >= 0) Et = taught;
   if(taught < 0) Et = Math.min(1, Math.max(0, 0.5 + (Et - 0.5)*1.3));   // more sensitive: calm parts calmer, peaks reach full sooner
-  A.E += (Et - A.E)*Math.min(1, dt*(taught >= 0 ? 4 : 3));
+  A.E += (Et - A.E)*Math.min(1, dt*(Et > A.E ? 14 : 0.7));        // rises instantly with the song, eases back down slowly (no dips between beats)
   recordAuto();
   const gate = Math.min(1, Math.max(0, (A.loudS - 0.02)/0.08));       // true silence -> nothing
   A.Eg = gate*(0.3 + 0.7*A.E);
@@ -1180,7 +1206,7 @@ function analyse(dt, now){
 
 // ---------- Tempo (runs on its own 100 Hz timer, independent of the frame rate) ----------
 // onset strength -> 8 s history -> autocorrelation over 60-200 BPM, with a mild preference around 120
-const TEMPO = {grid:new Float32Array(800), low:new Float32Array(800), pos:0, lastIdx:0, filled:0, acT:0, disagree:0};
+const TEMPO = {locked:0, hist:[], songReset:false, grid:new Float32Array(800), low:new Float32Array(800), pos:0, lastIdx:0, filled:0, acT:0, disagree:0};
 // ENERGY LEARNED FROM YOUR TEACHING (Demo track, 3 songs, your curve smoothed over ~4 s, scale 0-100).
 // What your energy follows: strong bass and bright highs compared with the low-mids (drops are bass + highs; breakdowns
 // are pads and chords in the low-mids), how close the song is to the loudest it has been, and the kick: a steady kick
@@ -1235,7 +1261,7 @@ function learnTick(){
       LEARN.subAvg = LEARN.subAvg === undefined ? sdb : LEARN.subAvg + (sdb - LEARN.subAvg)*0.01;   // ~1 s average
       const lo = Math.min(...H.slice(0, -1)), rise = sdb - lo;
       // a kick lands clearly above the rolling bass (>= 3 dB over the last second's average, after an 8 dB jump), not just back up to it
-      if(H.length >= 4 && rise > 8 && sdb > LEARN.subAvg + 3 && sdb > LEARN.subPk - 6 && LEARN.subT > Math.max(25, A.bpm > 0 ? 0.7*6000/A.bpm : 0)){   // at most one per beat
+      if(H.length >= 4 && rise > 8 && (LEARN.gate === undefined || LEARN.gate > 0.5) && sdb > LEARN.subAvg + 3 && sdb > LEARN.subPk - 6 && LEARN.subT > Math.max(25, A.bpm > 0 ? 0.7*6000/A.bpm : 0)){   // at most one per beat
         const ks = Math.min(1, 0.65 + (rise - 8)/14); LEARN.subT = 0;
         A.core = Math.max(A.core || 0, ks);                              // Radial solid ring, Wave punch
         A.hit[0] = Math.max(A.hit[0], ks*Math.min(1, 0.4 + A.Eg));        // every style's kick (uLowHit)
@@ -1244,11 +1270,24 @@ function learnTick(){
         if(S.shake === 'on' && A.E > 0.55){ const ang = Math.random()*Math.PI*2, m = 0.006*A.int*ks; A.shake = [Math.cos(ang)*m, Math.sin(ang)*m]; }
       } }
     const raw = [pw(60,200), pw(200,800), pw(3000,10000), pw(0,sr/2), k/Math.max(1,kn)];
-    if(raw[3] < -90) continue;                                 // silence: keep the last estimate
-    if(!LEARN.x){ LEARN.x = raw.slice(); LEARN.pk = raw[3]; LEARN.kickL = raw[4]; }
+    // SILENCE GATE: loudness against the fixed reference. Below it nothing moves, however long the quiet lasts
+    // (nothing adapts upward to the room noise any more).
+    LEARN.lv = LEARN.lv === undefined ? raw[3] : LEARN.lv + (raw[3] - LEARN.lv)*(raw[3] > LEARN.lv ? 0.2 : 0.01/0.25);
+    LEARN.gate = Math.max(0, Math.min(1, (LEARN.lv - (learnRef() - 34))/8));
+    // silence for 1.2 s (between songs) -> the next sound is a new song
+    if(raw[3] < -60){ LEARN.quiet = (LEARN.quiet || 0) + 1; if(LEARN.quiet > 120) LEARN.newSong = true; continue; }
+    LEARN.quiet = 0;
+    if(!LEARN.x || LEARN.newSong){
+      // A NEW SONG (after 1.2 s of silence): only the tempo starts over. Loudness is judged against a FIXED reference,
+      // not the song's own history, so starting or seeking anywhere in a song reads the same as playing through it.
+      LEARN.x = raw.slice(); LEARN.xf = raw.slice(); if(LEARN.kickL === undefined || !LEARN.kickL) LEARN.kickL = 0.03; LEARN.age = 0; LEARN.newSong = false;
+      TEMPO.songReset = true;
+    }
+    LEARN.age = (LEARN.age || 0) + 0.01;
     for(let j=0;j<5;j++) LEARN.x[j] += (raw[j] - LEARN.x[j])*(0.01/3);
-    LEARN.pk = Math.max(LEARN.x[3], LEARN.pk - 0.1*0.01);       // the loudest the song has been (falls 6 dB a minute)
-    LEARN.kickL += (raw[4] - LEARN.kickL)*(0.01/30);
+    for(let j=0;j<5;j++) LEARN.xf[j] += (raw[j] - LEARN.xf[j])*(0.01/0.4);   // the same features, 0.4 s: a rise shows at once
+    LEARN.pk = learnRef();                                        // constant: moves only with the Sensitivity setting
+    LEARN.kickL += (Math.min(raw[4], 0.1) - LEARN.kickL)*(0.01/8);   // the usual kick strength over ~8 s (a seek settles fast)
     // bass level right now (0.3 s) and the strongest it has been lately: is the kick drum actually playing?
     LEARN.bf = LEARN.bf === undefined ? raw[0] : LEARN.bf + (raw[0] - LEARN.bf)*(0.01/0.3);
     LEARN.bmax = Math.max(LEARN.bf, (LEARN.bmax === undefined ? LEARN.bf : LEARN.bmax) - 0.15*0.01);
@@ -1256,8 +1295,14 @@ function learnTick(){
   if(!LEARN.x) return;
   const X = LEARN.x, f = [X[0] - X[1], X[2] - X[1], X[3] - LEARN.pk, X[4] - LEARN.kickL, X[4]];
   let e = LEARN.w[5]; for(let j=0;j<5;j++) e += LEARN.w[j]*(f[j] - LEARN.mu[j])/LEARN.sd[j];
-  LEARN.E = Math.min(1, Math.max(0, e/100));
+  const XF = LEARN.xf || X, ff = [XF[0] - XF[1], XF[2] - XF[1], XF[3] - LEARN.pk, XF[4] - LEARN.kickL, XF[4]];
+  let ef = LEARN.w[5]; for(let j=0;j<5;j++) ef += LEARN.w[j]*(ff[j] - LEARN.mu[j])/LEARN.sd[j];
+  // instant up, settled down: when the song rises the energy follows immediately; it eases back on the slower reading
+  LEARN.E = Math.min(1, Math.max(0, Math.max(e, ef)/100))*(LEARN.gate === undefined ? 1 : LEARN.gate);
 }
+// The loudness that counts as "full" for the energy: fixed (-20 dB, fitted to the taught demo track), 12 dB lower for the
+// microphone (it hears the room, not the file). Sensitivity moves it: x2 sensitivity = 12 dB more sensitive.
+function learnRef(){ return (srcKind === 'mic' ? -32 : -20) - 12*Math.log2(Math.max(0.3, S.sens)/1.1); }
 function tempoTick(){
   if(!srcKind || !tAn) return;
   tAn.getByteFrequencyData(tFreq);
@@ -1278,8 +1323,11 @@ function tempoTick(){
   const N = Math.min(800, TEMPO.filled);
   // kick/bass onsets: compress, remove the slow trend, then autocorrelate
   const x = new Float32Array(N);
-  let m = 0; for(let i=0;i<N;i++){ x[i] = TEMPO.low[(TEMPO.pos - N + i + 1600)%800]; m += x[i]; } m = m/N + 1e-9;
-  for(let i=0;i<N;i++) x[i] = Math.log1p(x[i]/m);
+  // the kick AND the rest of the kit (snare, clap, hats all sit on the same grid)
+  let m = 0, mg = 0; const lo = new Float32Array(N), gr = new Float32Array(N);
+  for(let i=0;i<N;i++){ const j = (TEMPO.pos - N + i + 1600)%800; lo[i] = TEMPO.low[j]; gr[i] = TEMPO.grid[j]; m += lo[i]; mg += gr[i]; }
+  m = m/N + 1e-9; mg = mg/N + 1e-9;
+  for(let i=0;i<N;i++) x[i] = Math.log1p(lo[i]/m) + 0.6*Math.log1p(gr[i]/mg);
   const y = new Float32Array(N); let run = 0;
   for(let i=0;i<N;i++){ run += x[i] - (i >= 31 ? x[i-31] : 0); const c = Math.min(i+1, 31); y[Math.max(0, i-15)] = Math.max(0, x[Math.max(0, i-15)] - run/c); }
   let ym = 0; for(let i=0;i<N;i++) ym += y[i]; ym /= N;
@@ -1298,9 +1346,23 @@ function tempoTick(){
   const den = r[bi-1] - 2*r[bi] + r[bi+1];
   const lag = bi + (den < 0 ? Math.max(-0.5, Math.min(0.5, 0.5*(r[bi-1] - r[bi+1])/den)) : 0);
   const nb = 6000/lag;
-  if(!A.bpm) A.bpm = nb;
-  else if(Math.abs(nb - A.bpm)/A.bpm < 0.05){ A.bpm += (nb - A.bpm)*0.4; TEMPO.disagree = 0; }
-  else if(++TEMPO.disagree >= 3){ A.bpm = nb; TEMPO.disagree = 0; }
+  let r0 = 0; for(let i=0;i<N;i++) r0 += (y[i]-ym)*(y[i]-ym); r0 /= N;
+  const conf = r[bi]/(r0 + 1e-9);                                   // how clearly the beat repeats (0..1)
+  TEMPO.conf = conf;
+  // ONE BPM PER SONG: a first guess shows quickly, then it LOCKS once the beat has agreed with itself for a few seconds.
+  // Breakdowns and build-ups can't move a locked tempo; only a clearly different, steady beat for ~5 s (or a new song) can.
+  if(TEMPO.songReset){ TEMPO.songReset = false; TEMPO.locked = 0; TEMPO.hist = []; A.bpm = 0; }
+  const H = TEMPO.hist || (TEMPO.hist = []); H.push({b:nb, c:conf}); if(H.length > 20) H.shift();
+  const near = (x, y, tol) => Math.abs(x - y)/y < tol;
+  const sure = (n, c) => { const last = H.slice(-n); return last.length === n && last.every(v => v.c >= c && near(v.b, nb, 0.025)); };
+  if(!TEMPO.locked){
+    if(conf >= 0.2) A.bpm = A.bpm ? A.bpm + (nb - A.bpm)*0.5 : nb;         // provisional, only from a clear beat
+    if(sure(5, 0.3)){ TEMPO.locked = H.slice(-5).reduce((x,v)=>x+v.b,0)/5; A.bpm = TEMPO.locked; }
+  } else {
+    if(conf >= 0.3 && near(nb, TEMPO.locked, 0.03)){ TEMPO.locked += (nb - TEMPO.locked)*0.1; A.bpm = TEMPO.locked; }   // fine-tune only
+    // a different tempo only after ~8 s of a clear, steady, different beat (build-up rolls don't last that steady)
+    if(sure(16, 0.35) && !near(nb, TEMPO.locked, 0.05)){ TEMPO.locked = nb; A.bpm = nb; }
+  }
 }
 
 // ---------- Render ----------
@@ -1375,39 +1437,55 @@ function frame(now){
   // sound freezes it into a standing wave; changes and the mids make it flow) and its own beat detection.
   const NS = +S.strings || 3;
   if(!A.str || A.str.n !== NS) A.str = {n:NS, l:new Float32Array(7), s:new Float32Array(7), st:new Float32Array(7), p:new Float32Array(7),
-    hit:new Float32Array(7), age:new Float32Array(7).fill(9), last:new Float32Array(7), hist:Array.from({length:7}, () => []), prev:new Float32Array(TONE_N), pk:new Float32Array(7).fill(-60), wk:new Float32Array(7).fill(8)};
+    hit:new Float32Array(7), age:new Float32Array(7).fill(9), last:new Float32Array(7), hist:Array.from({length:7}, () => []), prev:new Float32Array(TONE_N), pk:new Float32Array(7).fill(-60), wk:new Float32Array(7).fill(8), act:new Float32Array(7), glow:new Float32Array(7), cAvg:new Float32Array(7).fill(0.5), rest:new Float32Array(7)};
   const SR = A.str, live2 = !!srcKind;
   for(let b=0;b<NS;b++){
-    const i0 = Math.floor(TONE_N*b/NS), i1 = Math.floor(TONE_N*(b+1)/NS); let mx = 0, sm = 0, fl = 0;
-    let dmax = -200;
-    for(let i=i0;i<i1;i++){ const v = TONE.vs[i]; mx = Math.max(mx, v); sm += v; fl += Math.max(0, v - SR.prev[i]); if(TONE.db[i] > dmax) dmax = TONE.db[i]; }
-    // height = how loud THIS slice is now against its own loudest lately (falls 0.5 dB/s): a string shrinks only
-    // when its own frequencies get quieter, never because another band got louder. The loudest note counts, not an average.
-    SR.pk[b] = Math.max(dmax, SR.pk[b] - dt*0.5, -80);
-    const fr = NS > 1 ? b/(NS-1) : 0.5, sus = live2 && dmax > -150 ? Math.max(0, Math.min(1.2, (dmax - (SR.pk[b] - 30))/30)) : 0;
-    // rises instantly; shrinks at its own pace: low strings a little slower, high strings a little quicker
-    // sensitivity per string: lows as they were, mids a little more (x1.2), highs more (x1.5)
-    const g = 1 + 0.2*Math.min(1, fr*2) + 0.3*Math.max(0, fr*2 - 1);
-    const lt = live2 ? Math.min(1.8, sus*g + (i0 === 0 ? CHS.lev[10]*0.3 : 0)) : 0;
-    SR.l[b] = lt > SR.l[b] ? lt : SR.l[b] + (lt - SR.l[b])*Math.min(1, dt*(6 + 6*fr));
-    SR.s[b] += (sus - SR.s[b])*Math.min(1, dt/1.2);
-    const st = Math.max(0, Math.min(1, 1 - Math.abs(sus - SR.s[b])*2.5));
-    SR.st[b] += (st - SR.st[b])*Math.min(1, dt*6);
-    // each string is its own instrument: its flow and its wavelength follow ONLY its own frequencies
-    SR.p[b] += dt*(0.7 + 0.7*fr)*(0.3 + SR.l[b]*1.3)*(1 - SR.st[b])*2.4;
-    const wkT = 11*0.55*Math.pow(1.7/0.55, fr)*(1 + 0.9*Math.min(1.2, SR.l[b]));   // low strings long waves, high strings tight; busier = tighter
-    SR.wk[b] += (wkT - SR.wk[b])*Math.min(1, dt*5);
-    // beat: a jump in this slice's tones well above its recent jumps
-    const f = live2 ? fl/(i1-i0) : 0, hs = SR.hist[b]; hs.push(f); if(hs.length > 45) hs.shift();
+    // this string's part of 20 Hz-20 kHz: an equal share, overlapping its neighbours a little (7.5% each side)
+    const i0 = Math.max(0, Math.floor(TONE_N*(b - 0.075)/NS)), i1 = Math.min(TONE_N, Math.ceil(TONE_N*(b + 1.075)/NS));
+    let fl = 0, dmax = -200, cw = 0, cs = 0;
+    for(let i=i0;i<i1;i++){ const v = TONE.vs[i]; fl += Math.max(0, v - SR.prev[i]); if(TONE.db[i] > dmax) dmax = TONE.db[i]; cw += v*(i - i0); cs += v; }
+    const fr = NS > 1 ? b/(NS-1) : 0.5;
+    const g = 1 + 0.2*Math.min(1, fr*2) + 0.3*Math.max(0, fr*2 - 1);        // highs x1.5, mids x1.2 sensitivity
+    // 1. AMPLITUDE = how loud its part is now, against its own loudest lately (falls 0.5 dB/s)
+    const G = LEARN.gate === undefined ? 1 : LEARN.gate;
+    SR.pk[b] = Math.max(dmax, SR.pk[b] - dt*0.5*G, -80);
+    const lvl = G <= 0 ? 0 : live2 && dmax > -150 ? G* Math.max(0, Math.min(1.2, (dmax - (SR.pk[b] - 30))/30)) : 0;
+    // bounce: every rise above its part's resting level throws the string up, then it drops back fast
+    SR.rest[b] += (lvl - SR.rest[b])*Math.min(1, dt*(lvl < SR.rest[b] ? 12 : 1.2));
+    const bounce = Math.max(0, lvl - SR.rest[b])*2.4;
+    const lt = Math.min(1.8, (lvl*0.45 + bounce)*g);
+    SR.l[b] = lt > SR.l[b] ? lt : SR.l[b] + (lt - SR.l[b])*Math.min(1, dt*(9 + 6*fr));
+    // 2. WAVELENGTH = where the sound sits inside its part: low in the part -> longer waves, high -> shorter.
+    //    Each string has its own range (low strings longer, high strings shorter), overlapping a little.
+    const cen = cs > 0.05 ? cw/cs/Math.max(1, i1 - i0 - 1) : 0.5;
+    SR.cAvg[b] += (cen - SR.cAvg[b])*Math.min(1, dt/2);                   // compared with a moment ago, so every move shows
+    const cRel = Math.max(-0.85, Math.min(1, (cen - SR.cAvg[b])*(16 - 7*fr)));   // low parts move less inside their range, so they listen closer
+    const wkT = 7*Math.pow(4, fr)*(1 + 0.8*cRel)*(0.8 + 0.4*cen);    // stretches and squeezes clearly
+    SR.wk[b] += (wkT - SR.wk[b])*Math.min(1, dt*8);
+    // 3. RIGHT-TO-LEFT MOVEMENT = how busy its part is: changes in its tones push it along; a steady sound lets it
+    //    stand still (standing wave)
+    // onset strength: the biggest jumps in its part (top 8 bins) -> a hi-hat, shaker or rim click that touches only part
+    // of the slice still counts as a hit (the plain average used to wash it out)
+    let f = 0;
+    if(live2){ const jumps = []; for(let i=i0;i<i1;i++){ const dv = TONE.vs[i] - SR.prev[i]; if(dv > 0) jumps.push(dv); }
+      jumps.sort((x,y)=>y-x); for(let k=0;k<Math.min(8, jumps.length);k++) f += jumps[k]; f /= 8; }
+    SR.act[b] += (Math.min(1.5, (fl/(i1-i0))*g*14) - SR.act[b])*Math.min(1, dt*4);
+    SR.p[b] += dt*(0.6 + 0.6*fr)*(0.08 + SR.act[b]*2.2 + SR.l[b]*0.25)*1.8;   // a little slower
+    // beat in its part
+    const hs = SR.hist[b]; hs.push(f); if(hs.length > 45) hs.shift();
     const mean = hs.reduce((x,y)=>x+y,0)/hs.length, sd = Math.sqrt(hs.reduce((x,y)=>x+(y-mean)*(y-mean),0)/hs.length);
-    if(live2 && hs.length > 10 && f > mean + 1.4*sd/g + 0.004/g && now - SR.last[b] > 110){
+    if(live2 && hs.length > 10 && f > mean + 1.2*sd/g + 0.02/g && now - SR.last[b] > 90){
       SR.hit[b] = Math.max(SR.hit[b], Math.min(1, 0.55 + (f - mean)/(4*sd + 1e-4))); SR.age[b] = 0; SR.last[b] = now;
     }
     SR.hit[b] *= Math.exp(-dt*(5 + 4*fr)); SR.age[b] += dt;
+    // 4. GLOW = its loudness and its hits, brighter as the song's energy rises (the low string also glows on the kick)
+    SR.glow[b] = (0.3 + 0.8*SR.l[b] + 0.6*SR.hit[b] + (b === 0 ? 0.6*(A.core || 0) : 0))*(0.55 + 0.6*A.E);
   }
   SR.prev.set(TONE.vs);
+  A.bgT = (A.bgT || 0) + dt*(srcKind ? 0.06 + 0.45*A.E*A.E : 0.03);   // background clock: drifts faster with energy
+  gl.uniform1f(u.uBgT, A.bgT); gl.uniform1f(u.uE, srcKind ? A.E : 0);
   gl.uniform1f(u.uCore, A.core || 0); gl.uniform1f(u.uKAge, A.kickT ? Math.min(9, (performance.now() - A.kickT)/1000) : 9);
-  gl.uniform1f(u.uTravel, A.hs.x); gl.uniform1f(u.uSpeed, A.hs.v + A.hs.b); gl.uniform1f(u.uSpin, A.hs.spin); gl.uniform1f(u.uHyE, A.hs.e); gl.uniform1f(u.uNStr, NS); gl.uniform1fv(u.uStr, SR.l); gl.uniform1fv(u.uFlow, SR.p); gl.uniform1fv(u.uSHit, SR.hit); gl.uniform1fv(u.uSAge, SR.age); gl.uniform1fv(u.uSWK, SR.wk);
+  gl.uniform1f(u.uTravel, A.hs.x); gl.uniform1f(u.uSpeed, A.hs.v + A.hs.b); gl.uniform1f(u.uSpin, A.hs.spin); gl.uniform1f(u.uHyE, A.hs.e); gl.uniform1f(u.uNStr, NS); gl.uniform1fv(u.uStr, SR.l); gl.uniform1fv(u.uFlow, SR.p); gl.uniform1fv(u.uSHit, SR.hit); gl.uniform1fv(u.uSAge, SR.age); gl.uniform1fv(u.uSWK, SR.wk); gl.uniform1fv(u.uSGlow, SR.glow);
   // wave: highs set the wavelength (smoothed a little so the line doesn't flicker), lows the height (instant)
   A.wk = (A.wk || 6) + ((6 + 30*Math.min(1.5, L[2])) - (A.wk || 6))*Math.min(1, dt*5);
   gl.uniform1f(u.uWaveK, A.wk);
@@ -1537,7 +1615,7 @@ function taughtEnergy(){
   if(!TEACH.use || TEACH.on || !curAudio || !TEACH.v || TEACH.key !== songKey()) return -1;
   // smoothed: a gentle ~4 s average of your curve around this moment, so it glides instead of stepping
   const c = curAudio.currentTime/TEACH.step; let sw = 0, sv = 0;
-  for(let d=-8; d<=8; d++){ const v = TEACH.v[Math.round(c) + d]; if(v >= 0){ const g = Math.exp(-0.5*(d/4)*(d/4)); sw += g; sv += g*v; } }
+  for(let d=-4; d<=4; d++){ const v = TEACH.v[Math.round(c) + d]; if(v >= 0){ const g = Math.exp(-0.5*(d/1.5)*(d/1.5)); sw += g; sv += g*v; } }
   return sw > 0.5 ? sv/sw/10 : -1;
 }
 function recordAuto(){

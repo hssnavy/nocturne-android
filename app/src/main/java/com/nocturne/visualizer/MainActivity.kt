@@ -396,6 +396,19 @@ class MainActivity : Activity() {
         val say = TextView(this).apply { textSize = 13f; setTextColor(fg); setPadding(0, 0, 0, dp(10)) }
         val tvs = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         list.addView(TextView(this).apply { text = "Keep the phone and the TV on the same Wi-Fi. The phone listens and plays the music; the TV draws the visuals full screen at its own resolution."; textSize = 12f; setTextColor(muted); setPadding(0, 0, 0, dp(14)) })
+        // the TV's picture: Auto keeps it at 60 fps; Full HD and 4K always draw at that size
+        list.addView(TextView(this).apply { text = "TV picture"; textSize = 13f; setTextColor(fg); setPadding(0, 0, 0, dp(6)) })
+        run {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val btns = ArrayList<Pair<String, TextView>>()
+            for ((v, n) in listOf("auto" to "Auto (smoothest)", "fhd" to "Full HD", "4k" to "4K")) {
+                val b = pill(n) { Settings.tvRes = v; Settings.save(this); btns.forEach { (vv, bb) -> setOn(bb, vv == Settings.tvRes) } }
+                btns.add(v to b); r.addView(b, lp())
+            }
+            btns.forEach { (vv, bb) -> setOn(bb, vv == Settings.tvRes) }
+            list.addView(scroll(r))
+            list.addView(TextView(this).apply { text = "Auto lowers the detail when the TV can't keep up, so the motion stays fluid. Full HD and 4K always draw at that size; on a slow TV that can cost frame rate."; textSize = 11f; setTextColor(muted); setPadding(0, dp(4), 0, dp(18)) })
+        }
         list.addView(say); list.addView(tvs)
         val found = HashSet<String>()
         fun addTv(tv: Tv) {

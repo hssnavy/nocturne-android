@@ -137,6 +137,11 @@ class CaptureService : Service() {
                 .setBufferSizeInBytes(bufferBytes())
                 .build()
                 .takeIf { it.state == AudioRecord.STATE_INITIALIZED }
+                ?.also { r ->
+                    // a constant level: no automatic gain (it would turn up the room noise in silence) and no noise gating
+                    try { if (android.media.audiofx.AutomaticGainControl.isAvailable()) android.media.audiofx.AutomaticGainControl.create(r.audioSessionId)?.enabled = false } catch (_: Exception) {}
+                    try { if (android.media.audiofx.NoiseSuppressor.isAvailable()) android.media.audiofx.NoiseSuppressor.create(r.audioSessionId)?.enabled = false } catch (_: Exception) {}
+                }
         } catch (e: Exception) {
             null
         }
@@ -157,11 +162,18 @@ class CaptureService : Service() {
         val rate: Int
         private val wave: ByteArray
         private var lastNs = 0L
+        private var measure = false
+        private val m = Visualizer.MeasurementPeakRms()
+        private val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        private var volDb = 0f; private var volAt = 0L
         init {
             viz = Visualizer(0)
             viz.enabled = false
             viz.captureSize = Visualizer.getCaptureSizeRange()[1]
             viz.scalingMode = Visualizer.SCALING_MODE_NORMALIZED
+            // Android scales each captured block up to full size, which would make silence as big as music; the
+            // measured level puts back the real loudness (see read)
+            try { viz.measurementMode = Visualizer.MEASUREMENT_MODE_PEAK_RMS; measure = true } catch (_: Exception) {}
             viz.enabled = true
             rate = viz.samplingRate / 1000
             wave = ByteArray(viz.captureSize)
@@ -175,8 +187,25 @@ class CaptureService : Service() {
             val k = fresh.coerceIn(0, minOf(out.size, wave.size))
             val off = wave.size - k
             for (i in 0 until k) out[i] = ((wave[off + i].toInt() and 0xff) - 128) / 128f
+            if (measure && k > 0) try {
+                if (viz.getMeasurementPeakRms(m) == Visualizer.SUCCESS) {
+                    // the real level of the mix, as played; undo the phone's volume so the same song reads the same at any
+                    // volume (over Bluetooth the headphones set the volume, so the mix is already at full level)
+                    if (now - volAt > 500_000_000L) { volAt = now; volDb = volumeDb() }
+                    var s2 = 0.0; for (j in wave.indices) { val v = ((wave[j].toInt() and 0xff) - 128) / 128.0; s2 += v * v }
+                    val rn = Math.sqrt(s2 / wave.size)
+                    val real = Math.pow(10.0, m.mRms / 2000.0) / Math.pow(10.0, volDb / 20.0)
+                    val g = if (m.mRms <= -9000 || rn < 1e-4) 0.0 else real / rn
+                    for (i in 0 until k) out[i] = (out[i] * g).toFloat()
+                }
+            } catch (_: Exception) {}
             return k
         }
+        private fun volumeDb(): Float = try {
+            @Suppress("DEPRECATION") val bt = am.isBluetoothA2dpOn
+            if (bt || Build.VERSION.SDK_INT < 28) 0f
+            else max(-40f, am.getStreamVolumeDb(AudioManager.STREAM_MUSIC, am.getStreamVolume(AudioManager.STREAM_MUSIC), android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER))
+        } catch (_: Exception) { 0f }
         fun release() { try { viz.enabled = false; viz.release() } catch (_: Exception) {} }
     }
 

@@ -98,7 +98,7 @@ class TvLink(private val ctx: Context, private val brain: Brain, private val ren
         f[36] = if (S.bass == "middle") 1f else 0f; f[37] = if (S.seg) 1f else 0f
         f[38] = when (S.color) { "palette" -> 1f; "heat" -> 2f; "rainbow" -> 3f; else -> 0f }; f[39] = if (S.peaks == "off") 0f else 1f
         f[40] = S.trip; f[41] = if (S.aggcolor) 1f else 0f; f[42] = if (S.peakred) 1f else 0f
-        f[43] = when (S.trails) { "off" -> 0f; "long" -> 1.6f; else -> 1f }; f[44] = if (S.flash) 1f else 0f
+        f[43] = when (S.trails) { "off" -> 0f; "long" -> 1.6f; else -> 1f }; f[44] = if (S.flash) 1f else 0f; f[45] = when (S.tvRes) { "fhd" -> 1f; "4k" -> 2f; else -> 0f }
         System.arraycopy(b.chLev, 0, f, 48, 11); System.arraycopy(b.chHit, 0, f, 59, 11)
         System.arraycopy(b.strL, 0, f, 70, 7); System.arraycopy(b.strP, 0, f, 77, 7); System.arraycopy(b.strHit, 0, f, 84, 7)
         System.arraycopy(b.strAge, 0, f, 91, 7); System.arraycopy(b.strWK, 0, f, 98, 7); System.arraycopy(b.strGlow, 0, f, 105, 7)
