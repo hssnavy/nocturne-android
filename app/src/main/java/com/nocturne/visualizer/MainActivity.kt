@@ -33,6 +33,8 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONArray
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Nocturne: native visualizer. Sound goes straight from Android's audio system into the analyser and the
@@ -110,6 +112,9 @@ class MainActivity : Activity() {
         hud = TextView(this).apply { setTextColor(Color.argb(170, 233, 237, 242)); textSize = 13f; setPadding(dp(18), dp(16), dp(18), dp(8)) }
         root.addView(hud, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
         bar = buildBar()
+        // the credit, faint and small, on the main screen (top-right)
+        root.addView(TextView(this).apply { text = "by Hassan Al-Yunis"; textSize = 10f; letterSpacing = 0.05f; setTextColor(Color.argb(80, 233, 237, 242)); setPadding(dp(18), dp(18), dp(18), dp(8)) },
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END))
         root.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM).apply { bottomMargin = dp(12); leftMargin = dp(10); rightMargin = dp(10) })
         setContentView(root)
         hideSystemBars()
@@ -183,7 +188,7 @@ class MainActivity : Activity() {
     }
 
     private fun buildBar(): FrameLayout {
-        picName = TextView(this).apply { setTextColor(Color.WHITE); textSize = 13f; setPadding(dp(8), 0, dp(8), 0) }
+        picName = pill("") { showPicker() }.apply { setTextColor(Color.WHITE) }
         val prev = pill("‹") { setPicture(picIndex - 1) }
         val next = pill("›") { setPicture(picIndex + 1) }
         styleButtons.clear()
@@ -225,7 +230,7 @@ class MainActivity : Activity() {
         panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(12), dp(10), dp(40), dp(18))
+            setPadding(dp(12), dp(10), dp(40), dp(10))
             background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(Color.argb(190, 10, 12, 16)); setStroke(dp(1), Color.argb(33, 233, 237, 242)) }
             addView(scroll(r1))
             addView(scroll(styleRow), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
@@ -236,17 +241,15 @@ class MainActivity : Activity() {
         val frame = FrameLayout(this)
         val panelWrap = FrameLayout(this)
         panelWrap.addView(panel, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL))
-        // inside the panel: minimise chevron (top-right) and the credit (bottom-right, faint)
+        // inside the panel: minimise chevron (top-right)
         val minBtn = Chevron(false).apply { setOnClickListener { minimised = true; applyMin() } }
-        val credit = TextView(this).apply { text = "by Hassan Al-Yunis"; textSize = 9f; letterSpacing = 0.04f; setTextColor(Color.argb(90, 233, 237, 242)) }
+
         val panelBox = FrameLayout(this)
         panelBox.addView(panelWrap)
         panel.addOnLayoutChangeListener { _, l, t, r, b, _, _, _, _ ->
             (minBtn.layoutParams as FrameLayout.LayoutParams).apply { leftMargin = r - dp(36); topMargin = t + dp(4) }; minBtn.requestLayout()
-            (credit.layoutParams as FrameLayout.LayoutParams).apply { leftMargin = r - dp(12) - credit.width; topMargin = b - dp(16) }; credit.requestLayout()
         }
         panelBox.addView(minBtn, FrameLayout.LayoutParams(dp(32), dp(28)))
-        panelBox.addView(credit, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         frame.addView(panelBox, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         // when minimised: a chevron pointing up stays at the right
         maxBtn = Chevron(true).apply {
@@ -258,11 +261,94 @@ class MainActivity : Activity() {
         return frame
     }
 
+    private var firstMin = true
     private fun applyMin() {
-        bar.findViewWithTag<View>("panelBox").visibility = if (minimised) View.GONE else View.VISIBLE
-        maxBtn.visibility = if (minimised) View.VISIBLE else View.GONE
+        val box = bar.findViewWithTag<View>("panelBox")
         getPreferences(MODE_PRIVATE).edit().putBoolean("min", minimised).apply()
+        if (firstMin) {           // on start: no animation, just the saved state
+            firstMin = false
+            box.visibility = if (minimised) View.GONE else View.VISIBLE
+            maxBtn.visibility = if (minimised) View.VISIBLE else View.GONE
+            showBar(); return
+        }
+        box.animate().cancel(); maxBtn.animate().cancel()
+        if (minimised) {
+            // the panel glides down and fades into the corner; the chevron fades in where it went
+            box.pivotX = box.width.toFloat(); box.pivotY = box.height.toFloat()
+            box.animate().translationY(box.height * 0.6f).translationX(box.width * 0.25f).scaleX(0.6f).scaleY(0.6f).alpha(0f)
+                .setDuration(320).setInterpolator(android.view.animation.DecelerateInterpolator())
+                .withEndAction { box.visibility = View.GONE }.start()
+            maxBtn.alpha = 0f; maxBtn.scaleX = 0.6f; maxBtn.scaleY = 0.6f; maxBtn.visibility = View.VISIBLE
+            maxBtn.animate().alpha(1f).scaleX(1f).scaleY(1f).setStartDelay(180).setDuration(240).start()
+        } else {
+            maxBtn.animate().alpha(0f).scaleX(0.6f).scaleY(0.6f).setStartDelay(0).setDuration(160).withEndAction { maxBtn.visibility = View.GONE }.start()
+            box.visibility = View.VISIBLE
+            box.pivotX = box.width.toFloat(); box.pivotY = box.height.toFloat()
+            box.alpha = 0f; box.translationY = box.height * 0.6f; box.translationX = box.width * 0.25f; box.scaleX = 0.6f; box.scaleY = 0.6f
+            box.animate().translationY(0f).translationX(0f).scaleX(1f).scaleY(1f).alpha(1f)
+                .setDuration(340).setInterpolator(android.view.animation.DecelerateInterpolator()).withEndAction(null).start()
+        }
         showBar()
+    }
+
+    // ---------------- picture chooser (tap the picture's name) ----------------
+
+    private var picker: View? = null
+    private fun showPicker() {
+        if (picker != null) return
+        val root = window.decorView.findViewById<FrameLayout>(android.R.id.content)
+        val shade = FrameLayout(this).apply { setBackgroundColor(Color.argb(215, 4, 5, 8)); alpha = 0f; isClickable = true }
+        val grid = android.widget.GridLayout(this).apply {
+            val wDp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
+            columnCount = max(2, min(6, (wDp / 170).toInt()))
+            setPadding(dp(14), dp(56), dp(14), dp(24))
+        }
+        val cellW = (resources.displayMetrics.widthPixels - dp(28)) / grid.columnCount - dp(10)
+        pics.forEachIndexed { i, p ->
+            val cell = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; setPadding(dp(5), dp(5), dp(5), dp(5))
+                background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setStroke(dp(if (i == picIndex) 2 else 1), if (i == picIndex) accent else Color.argb(30, 233, 237, 242)) }
+                setOnClickListener { setPicture(i); closePicker() }
+            }
+            val img = android.widget.ImageView(this).apply { scaleType = android.widget.ImageView.ScaleType.CENTER_CROP; setImageBitmap(thumb(p, cellW)) }
+            cell.addView(img, LinearLayout.LayoutParams(cellW, (cellW * 0.62f).toInt()))
+            cell.addView(TextView(this).apply { text = p.name; textSize = 12f; setTextColor(fg); setPadding(dp(2), dp(6), 0, dp(2)) })
+            grid.addView(cell, android.widget.GridLayout.LayoutParams().apply { width = cellW + dp(10); setMargins(dp(5), dp(5), dp(5), dp(5)) })
+        }
+        val sv = android.widget.ScrollView(this).apply { addView(grid) }
+        shade.addView(sv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        shade.addView(TextView(this).apply { text = "Pictures"; textSize = 16f; setTextColor(fg); setPadding(dp(20), dp(18), dp(20), dp(10)) },
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
+        shade.addView(pill("Close") { closePicker() }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply { topMargin = dp(12); rightMargin = dp(14) })
+        root.addView(shade, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        shade.animate().alpha(1f).setDuration(220).start()
+        picker = shade
+    }
+    private fun closePicker() {
+        val v = picker ?: return; picker = null
+        v.animate().alpha(0f).setDuration(200).withEndAction { (v.parent as? ViewGroup)?.removeView(v) }.start()
+        showBar()
+    }
+    private val thumbs = HashMap<String, android.graphics.Bitmap>()
+    private fun thumb(p: Pic, w: Int): android.graphics.Bitmap = thumbs.getOrPut(p.id) {
+        if (p.gen > 0 || p.file.isEmpty()) {
+            // generated pictures: a soft blend of their colours
+            val h = (w * 0.62f).toInt().coerceAtLeast(1)
+            val b = android.graphics.Bitmap.createBitmap(w.coerceAtLeast(1), h, android.graphics.Bitmap.Config.ARGB_8888)
+            val c = Canvas(b); c.drawColor(Color.BLACK)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            p.pal.forEachIndexed { k, col ->
+                paint.shader = android.graphics.RadialGradient(w * (0.2f + 0.2f * k), h * (0.35f + 0.1f * (k % 2)), w * 0.35f,
+                    Color.argb(150, (col[0] * 255).toInt(), (col[1] * 255).toInt(), (col[2] * 255).toInt()), Color.TRANSPARENT, android.graphics.Shader.TileMode.CLAMP)
+                c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
+            }
+            b
+        } else {
+            val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            assets.open("pics/" + p.file).use { android.graphics.BitmapFactory.decodeStream(it, null, o) }
+            var sample = 1; while (o.outWidth / (sample * 2) >= w) sample *= 2
+            assets.open("pics/" + p.file).use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) }!!
+        }
     }
 
     private fun fmt(sec: Double): String { val s = sec.toInt().coerceAtLeast(0); return "${s / 60}:${(s % 60).toString().padStart(2, '0')}" }
@@ -443,6 +529,9 @@ class MainActivity : Activity() {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) hideSystemBars()
     }
+
+    @Deprecated("Back closes the picture chooser first")
+    override fun onBackPressed() { if (picker != null) closePicker() else @Suppress("DEPRECATION") super.onBackPressed() }
 
     override fun onResume() { super.onResume(); gl.onResume() }
     override fun onPause() { gl.onPause(); super.onPause() }
