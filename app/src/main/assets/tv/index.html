@@ -11,9 +11,17 @@ canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block}
 <canvas id="gl"></canvas>
 <div id="msg">Connecting to Nocturne on your phone…</div>
 <div id="credit">by Hassan Al-Yunis</div>
+<video id="awake" muted loop playsinline autoplay style="position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none"><source src="/awake.mp4" type="video/mp4"><source src="/awake.webm" type="video/webm"></video>
 <script>
 // Nocturne TV: the phone listens and analyses; this page only draws, at the TV's own resolution.
 const msg = document.getElementById('msg');
+// keep the TV from starting its screensaver: a tiny silent video plays on a loop (TVs don't dim while a video plays),
+// plus the screen wake lock where the browser has it
+const awake = document.getElementById('awake');
+function keepAwake(){ try { const p = awake.play(); if(p && p.catch) p.catch(() => {}); } catch(e){}
+  try { if(navigator.wakeLock && !keepAwake.lock) navigator.wakeLock.request('screen').then(l => { keepAwake.lock = l; l.addEventListener('release', () => keepAwake.lock = null); }).catch(() => {}); } catch(e){} }
+setInterval(() => { if(awake.paused) keepAwake(); }, 5000);
+document.addEventListener('visibilitychange', () => { if(!document.hidden) keepAwake(); });
 const canvas = document.getElementById('gl');
 const gl = canvas.getContext('webgl2', {antialias:false, depth:false, stencil:false, premultipliedAlpha:false, powerPreference:'high-performance'});
 if(!gl) msg.textContent = "This TV's browser can't run the visuals (WebGL 2 missing).";
@@ -21,9 +29,12 @@ const floatOK = gl && !!gl.getExtension('EXT_color_buffer_float');
 const STY = [ // zoom, rot, shiftY, decay, keep, warp, hue  (same as the phone)
   [1.000,0,0.0015,0.80,0,0,0],[1.005,0.0008,0,0.86,0,0,0],[1,0,0,0,1,0,0],[1.006,0.001,0,0.72,0,0,0],[1.004,-0.0012,0,0.80,0,0,0],
   [1.006,0,0,0.62,0,0,0],[1.000,0,0.0015,0.86,0,0,0],[1.008,0.002,0,0.965,1,1,0.002],[1.003,0.0008,0,0.75,0,0,0.0012],[1.010,0,0,0.72,0,0,0]];
+const GW = 1280, GH = 720;  // generated pictures: plenty for a soft background, and light on the TV
 let PS, PC, PD, PG, pics = [], cur = {i:-1, tex:null, w:16, h:9}, gen = null;
 const F = new Float32Array(112), U8 = new Uint8Array(1024);
 let lastData = 0, started = false;
+const Q = []; let offset = null; const DELAY = 50;   // ms behind the phone, to even out Wi-Fi jitter
+let ws = null; const fps = {n:0, t:performance.now(), v:0};
 const tx = (t) => fetch(t).then(r => r.text());
 
 function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
@@ -43,7 +54,7 @@ function target(w, h, mips, wrap){
   if(mips) gl.generateMipmap(gl.TEXTURE_2D);
   const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
   gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT); gl.bindFramebuffer(gl.FRAMEBUFFER, null); return {t, f}; }
-let T = null; const SCALES = [1, 0.85, 0.72, 0.6, 0.5]; const perf = {dts:[], step:0, last:0, good:0};
+let T = null; const SCALES = [1, 0.85, 0.72, 0.6, 0.5, 0.42, 0.35]; const perf = {dts:[], step:0, last:0, good:0};
 function ensure(w, h){ if(T && T.w === w && T.h === h) return;
   if(T) [T.scene, ...T.acc].forEach(x => { gl.deleteTexture(x.t); gl.deleteFramebuffer(x.f); });
   T = {w, h, scene: target(w, h, false), acc: [target(w, h, true), target(w, h, true)], i: 0, key: ''}; }
@@ -67,7 +78,7 @@ async function init(){
 
 function loadPic(i){
   const p = pics[i]; if(!p) return; cur.i = i;
-  if(p.gen){ if(!gen){ gen = target(1920, 1080, true, gl.MIRRORED_REPEAT); } cur.tex = gen.t; cur.w = 1920; cur.h = 1080; return; }
+  if(p.gen){ if(!gen){ gen = target(GW, GH, true, gl.MIRRORED_REPEAT); } cur.tex = gen.t; cur.w = GW; cur.h = GH; return; }
   const img = new Image();
   img.onload = () => { if(cur.i !== i) return; const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img); gl.generateMipmap(gl.TEXTURE_2D);
@@ -78,11 +89,16 @@ function loadPic(i){
 }
 
 function connect(){
-  const ws = new WebSocket('ws://' + location.host + '/ws'); ws.binaryType = 'arraybuffer';
+  ws = new WebSocket('ws://' + location.host + '/ws'); ws.binaryType = 'arraybuffer';
   ws.onmessage = e => { const b = e.data; if(b.byteLength < 448 + 1024) return;
-    F.set(new Float32Array(b, 0, 112)); U8.set(new Uint8Array(b, 448, 1024)); lastData = performance.now();
+    const now = performance.now(), f = new Float32Array(b.slice(0, 448)), u = new Uint8Array(b.slice(448, 448 + 1024));
+    const o = f[3]*1000 - now;                    // phone clock minus TV clock (plus network delay)
+    if(offset === null || o > offset || o < offset - 400) offset = o; else offset -= 0.05;
+    if(Q.length && f[3] < Q[Q.length-1].f[3] - 1) Q.length = 0;   // the phone restarted
+    Q.push({f, u}); if(Q.length > 30) Q.shift();
+    lastData = now; keepAwake();
     if(!started){ started = true; msg.textContent = 'Press OK on the remote for full screen'; setTimeout(() => msg.style.opacity = 0, 6000); } };
-  ws.onclose = () => { started = false; msg.style.opacity = .75; msg.textContent = 'Connecting to Nocturne on your phone…'; setTimeout(connect, 1500); };
+  ws.onclose = () => { Q.length = 0; offset = null; started = false; msg.style.opacity = .75; msg.textContent = 'Connecting to Nocturne on your phone…'; setTimeout(connect, 1500); };
 }
 function fullscreen(){ const d = document.documentElement; (d.requestFullscreen || d.webkitRequestFullscreen || (() => {})).call(d); msg.style.opacity = 0; }
 addEventListener('keydown', fullscreen); addEventListener('click', fullscreen);
@@ -95,14 +111,28 @@ function frame(now){
   // full TV resolution (the browser's pixels x its device pixel ratio, up to 4K), stepping down only if the TV can't keep up
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
   let W = Math.floor(innerWidth*dpr), H = Math.floor(innerHeight*dpr);
+  const cap = perf.step >= 3 ? 1920*1080 : perf.step >= 2 ? 2560*1440 : 3840*2160;
+  if(W*H > cap){ const k = Math.sqrt(cap/(W*H)); W = Math.floor(W*k); H = Math.floor(H*k); }
   if(W*H > 3840*2160){ const k = Math.sqrt(3840*2160/(W*H)); W = Math.floor(W*k); H = Math.floor(H*k); }
   if(canvas.width !== W || canvas.height !== H){ canvas.width = W; canvas.height = H; }
   perf.dts.push(dt); if(perf.dts.length > 120) perf.dts.shift();
-  if(perf.dts.length >= 60 && now - perf.last > 1500){ const s = [...perf.dts].sort((a,b)=>a-b), ref = Math.min(s[Math.floor(s.length*0.1)], 1/55), rec = perf.dts.slice(-30).reduce((a,b)=>a+b,0)/30;
-    if(rec > ref*1.3 && perf.step < SCALES.length-1){ perf.step++; perf.last = now; perf.good = now; } else if(rec < ref*1.08){ if(now - perf.good > 4000 && perf.step > 0){ perf.step--; perf.last = now; perf.good = now; } } else perf.good = now; }
+  if(perf.dts.length >= 60 && now - perf.last > 900){ const s = [...perf.dts].sort((a,b)=>a-b), ref = Math.min(Math.max(s[Math.floor(s.length*0.1)], 1/62), 1/57), rec = perf.dts.slice(-30).reduce((a,b)=>a+b,0)/30;
+    if(rec > ref*1.15 && perf.step < SCALES.length-1){ perf.step++; perf.last = now; perf.good = now; } else if(rec < ref*1.08){ if(now - perf.good > 4000 && perf.step > 0){ perf.step--; perf.last = now; perf.good = now; } } else perf.good = now; }
   const w = Math.max(2, Math.round(W*SCALES[perf.step])), h = Math.max(2, Math.round(H*SCALES[perf.step]));
   ensure(w, h);
   const live = now - lastData < 1500;
+  if(live && Q.length){
+    const pt = (now + offset - DELAY)/1000; let i = Q.length - 1;
+    while(i > 0 && Q[i-1].f[3] > pt) i--;
+    const b = Q[i], a = Q[Math.max(0, i-1)];
+    let k = (a === b || b.f[3] <= a.f[3]) ? 1 : (pt - a.f[3])/(b.f[3] - a.f[3]); k = Math.max(0, Math.min(1, k));
+    for(let j = 0; j < 112; j++) F[j] = a.f[j] + (b.f[j] - a.f[j])*k;
+    for(const j of [0,1,2,19,34,35,36,37,38,39,40,41,42,43,44]) F[j] = b.f[j];
+    for(let j = 0; j < 1024; j++) U8[j] = a.u[j] + (b.u[j] - a.u[j])*k;
+    while(Q.length > 2 && Q[1].f[3] < pt) Q.shift();
+  }
+  fps.n++; if(now - fps.t > 1000){ fps.v = Math.round(fps.n*1000/(now - fps.t)); fps.n = 0; fps.t = now;
+    if(ws && ws.readyState === 1) ws.send(JSON.stringify({fps: fps.v, w: canvas.width, h: canvas.height, scale: SCALES[perf.step], dpr: window.devicePixelRatio || 1})); }
   const style = live ? Math.round(F[1]) : 2, pi = Math.round(F[2]);
   if(pics.length && pi !== cur.i && pi >= 0 && pi < pics.length) loadPic(pi);
   const key = pi + '|' + style; if(T.key !== key){ T.key = key; T.acc.forEach(x => { gl.bindFramebuffer(gl.FRAMEBUFFER, x.f); gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT); }); }
@@ -112,8 +142,8 @@ function frame(now){
   up(specT, 1, 0, 128); up(peakT, 2, 128, 128); up(waveT, 3, 256, 256); up(toneT, 4, 512, 256); up(toneST, 5, 768, 256);
   const pic = pics[pi] || pics[0];
   if(pic.gen && gen){
-    gl.bindFramebuffer(gl.FRAMEBUFFER, gen.f); gl.viewport(0, 0, 1920, 1080); gl.useProgram(PG.p);
-    gl.uniform2f(PG.u('uRes'), 1920, 1080); gl.uniform1f(PG.u('uTime'), F[12]); gl.uniform1f(PG.u('uPhase'), F[11]*3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, gen.f); gl.viewport(0, 0, GW, GH); gl.useProgram(PG.p);
+    gl.uniform2f(PG.u("uRes"), GW, GH); gl.uniform1f(PG.u('uTime'), F[12]); gl.uniform1f(PG.u('uPhase'), F[11]*3);
     gl.uniform1f(PG.u('uBass'), F[4]); gl.uniform1f(PG.u('uHigh'), F[6]); gl.uniform1f(PG.u('uLevel'), F[33]); gl.uniform1f(PG.u('uKick'), F[7]); gl.uniform1f(PG.u('uGen'), pic.gen);
     gl.drawArrays(gl.TRIANGLES, 0, 3); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, gen.t); gl.generateMipmap(gl.TEXTURE_2D);
   }

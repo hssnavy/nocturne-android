@@ -404,7 +404,7 @@ class MainActivity : Activity() {
                 say.text = "Connecting to ${tv.name}…"
                 Thread {
                     val url = l.url()
-                    val err = if (url == null) "This phone isn't on Wi-Fi." else tvCast.open(tv, url) { m -> runOnUiThread { say.text = m } }
+                    val err = if (url == null) "This phone isn't on Wi-Fi." else tvCast.open(tv, url, { (tvLink?.tvCount ?: 0) > 0 }) { m -> runOnUiThread { say.text = m } }
                     runOnUiThread { say.text = err ?: "Casting to ${tv.name}. On the TV, press OK on the remote for full screen." }
                 }.start()
             }
@@ -431,7 +431,7 @@ class MainActivity : Activity() {
             if (castView == null) return
             addr.text = (tvLink?.url() ?: "Connect the phone to Wi-Fi").removePrefix("http://").removeSuffix("/")
             val n = tvLink?.tvCount ?: 0
-            conn.text = if (n == 0) "No TV is showing Nocturne yet." else if (n == 1) "1 TV is showing Nocturne." else "$n TVs are showing Nocturne."
+            conn.text = if (n == 0) "No TV is showing Nocturne yet." else (if (n == 1) "1 TV is showing Nocturne" else "$n TVs are showing Nocturne") + (tvLink?.tvInfo?.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: ".")
             ui.postDelayed(this, 700)
         } }
         val sv = android.widget.ScrollView(this).apply { addView(list) }

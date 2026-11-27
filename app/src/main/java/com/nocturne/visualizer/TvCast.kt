@@ -79,95 +79,141 @@ class TvCast(private val ctx: Context) {
         j.optJSONObject("device")?.optString("name")?.ifEmpty { null } ?: j.optString("name").ifEmpty { "Samsung TV" }
     } catch (_: Exception) { null }
 
-    /** Opens [url] on the TV. [say] reports progress ("Look at the TV and choose Allow"). Blocking. Returns null on success, else the problem. */
-    fun open(tv: Tv, url: String, say: (String) -> Unit): String? = when (tv.brand) {
-        "lg" -> openLg(tv, url, say)
-        "samsung" -> openSamsung(tv, url, say)
+    /**
+     * Opens [url] on the TV. [say] reports progress ("Look at the TV and choose Allow"); [arrived] tells whether the TV
+     * has loaded the page (it connects back to the phone). Blocking. Returns null on success, else the problem in plain words.
+     */
+    fun open(tv: Tv, url: String, arrived: () -> Boolean, say: (String) -> Unit): String? = when (tv.brand) {
+        "lg" -> openLg(tv, url, arrived, say)
+        "samsung" -> openSamsung(tv, url, arrived, say)
         else -> "This TV isn't supported for casting"
     }
 
+    /** Waits up to [ms] for the TV to load the page. */
+    private fun waitArrive(arrived: () -> Boolean, ms: Long): Boolean {
+        val end = System.currentTimeMillis() + ms
+        while (System.currentTimeMillis() < end) { if (arrived()) return true; Thread.sleep(250) }
+        return arrived()
+    }
+
+    private val fallback = "Couldn't open it on the TV automatically. Open the TV's web browser and type the address below."
+
     // ---------------- LG webOS ----------------
 
-    private fun openLg(tv: Tv, url: String, say: (String) -> Unit): String? {
-        var ws: WsClient? = null
-        for (addr in listOf("wss://${tv.ip}:3001/", "ws://${tv.ip}:3000/")) {
-            try { ws = WsClient(addr).also { it.connect() }; break } catch (_: Exception) { ws = null }
-        }
-        val c = ws ?: return "Couldn't reach the LG TV. Check it's on and on the same Wi-Fi, and that \"LG Connect Apps\" is on in its network settings."
-        try {
-            val reg = JSONObject(ctx.assets.open("tv/lg_register.json").bufferedReader().use { it.readText() })
-            prefs.getString("lg:" + tv.ip, null)?.let { reg.put("client-key", it) }
-            c.send(JSONObject().put("type", "register").put("id", "reg0").put("payload", reg).toString())
-            val end = System.currentTimeMillis() + 60_000
-            var ok = false
-            while (System.currentTimeMillis() < end && !ok) {
-                val m = c.receive(2000) ?: continue
-                val j = JSONObject(m)
-                when {
-                    j.optString("type") == "registered" -> { j.optJSONObject("payload")?.optString("client-key")?.let { prefs.edit().putString("lg:" + tv.ip, it).apply() }; ok = true }
-                    j.optJSONObject("payload")?.optString("pairingType") == "PROMPT" -> say("Look at the TV and choose Allow")
-                    j.optString("type") == "error" -> return "The TV said no: " + j.optString("error")
+    private fun lgConnect(ip: String): WsClient? {
+        for (addr in listOf("wss://$ip:3001/", "ws://$ip:3000/")) { try { return WsClient(addr).also { it.connect() } } catch (_: Exception) {} }
+        return null
+    }
+
+    /** Pairs (the TV asks Allow once) and returns a connection ready for commands, or an error. */
+    private fun lgRegister(tv: Tv, say: (String) -> Unit): Pair<WsClient?, String?> {
+        val end = System.currentTimeMillis() + 70_000
+        var tries = 0
+        while (System.currentTimeMillis() < end && tries < 4) {
+            tries++
+            val c = lgConnect(tv.ip) ?: return null to "Couldn't reach the LG TV. Check it's on and on the same Wi-Fi, and that \"LG Connect Apps\" is on in its network settings."
+            try {
+                val reg = JSONObject(ctx.assets.open("tv/lg_register.json").bufferedReader().use { it.readText() })
+                prefs.getString("lg:" + tv.ip, null)?.let { reg.put("client-key", it) }
+                c.send(JSONObject().put("type", "register").put("id", "reg$tries").put("payload", reg).toString())
+                while (System.currentTimeMillis() < end) {
+                    val m = c.receive(2000) ?: continue
+                    val j = JSONObject(m)
+                    when {
+                        j.optString("type") == "registered" -> { j.optJSONObject("payload")?.optString("client-key")?.takeIf { it.isNotEmpty() }?.let { prefs.edit().putString("lg:" + tv.ip, it).apply() }; return c to null }
+                        j.optJSONObject("payload")?.optString("pairingType") == "PROMPT" -> say("Look at the TV and choose Allow")
+                        j.optString("type") == "error" -> {
+                            // a remembered key the TV no longer accepts: forget it and ask again
+                            if (prefs.contains("lg:" + tv.ip)) { prefs.edit().remove("lg:" + tv.ip).apply(); throw java.io.IOException("stale key") }
+                            c.close(); return null to "The TV said no (${j.optString("error")}). Try again and choose Allow on the TV."
+                        }
+                    }
                 }
+            } catch (e: Exception) { c.close(); say("The TV closed the connection, trying again…"); Thread.sleep(800) }
+        }
+        return null to "The TV kept closing the connection. Try again and choose Allow on the TV, or use the address below."
+    }
+
+    private fun openLg(tv: Tv, url: String, arrived: () -> Boolean, say: (String) -> Unit): String? {
+        val (c0, err) = lgRegister(tv, say)
+        var c = c0 ?: return err
+        say("Opening Nocturne on the TV…")
+        // three ways to ask webOS to open a web page; stop as soon as the TV loads it
+        val asks = listOf(
+            "ssap://system.launcher/open" to JSONObject().put("target", url),
+            "ssap://system.launcher/launch" to JSONObject().put("id", "com.webos.app.browser").put("target", url),
+            "ssap://system.launcher/launch" to JSONObject().put("id", "com.webos.app.browser").put("params", JSONObject().put("target", url)))
+        try {
+            for ((k, a) in asks.withIndex()) {
+                try { c.send(JSONObject().put("type", "request").put("id", "open$k").put("uri", a.first).put("payload", a.second).toString()); waitFor(c, "open$k") }
+                catch (_: Exception) { c.close(); c = lgRegister(tv, say).first ?: break }
+                if (waitArrive(arrived, 9000)) return null
             }
-            if (!ok) return "The TV didn't answer in time. Try again and choose Allow on the TV."
-            say("Opening Nocturne on the TV…")
-            // open the page in the TV's web browser
-            c.send(JSONObject().put("type", "request").put("id", "open1").put("uri", "ssap://system.launcher/open").put("payload", JSONObject().put("target", url)).toString())
-            val r = waitFor(c, "open1")
-            if (r == null || r.optString("type") == "error" || r.optJSONObject("payload")?.optBoolean("returnValue", true) == false) {
-                c.send(JSONObject().put("type", "request").put("id", "open2").put("uri", "ssap://system.launcher/launch")
-                    .put("payload", JSONObject().put("id", "com.webos.app.browser").put("target", url).put("params", JSONObject().put("target", url))).toString())
-                val r2 = waitFor(c, "open2")
-                if (r2 == null || r2.optString("type") == "error") return "The TV wouldn't open its browser" + (r2?.optString("error")?.let { ": $it" } ?: "")
-            }
-            return null
-        } catch (e: Exception) { return "Lost the connection to the TV (${e.message})" } finally { c.close() }
+        } finally { c.close() }
+        return if (arrived()) null else fallback
     }
 
     private fun waitFor(c: WsClient, id: String): JSONObject? {
-        val end = System.currentTimeMillis() + 8000
+        val end = System.currentTimeMillis() + 5000
         while (System.currentTimeMillis() < end) { val m = c.receive(1500) ?: continue; val j = JSONObject(m); if (j.optString("id") == id) return j }
         return null
     }
 
     // ---------------- Samsung Tizen ----------------
 
-    private fun openSamsung(tv: Tv, url: String, say: (String) -> Unit): String? {
-        val name = Base64.encodeToString("Nocturne".toByteArray(), Base64.NO_WRAP)
-        val token = prefs.getString("ss:" + tv.ip, null)
-        var c: WsClient? = null; var err = ""
-        for (addr in listOf("wss://${tv.ip}:8002/api/v2/channels/samsung.remote.control?name=" + URLEncoder.encode(name, "UTF-8") + (token?.let { "&token=$it" } ?: ""),
-                            "ws://${tv.ip}:8001/api/v2/channels/samsung.remote.control?name=" + URLEncoder.encode(name, "UTF-8"))) {
-            try { c = WsClient(addr).also { it.connect(5000) }; break } catch (e: Exception) { err = e.message ?: ""; c = null }
+    private fun ssConnect(ip: String, token: String?): WsClient? {
+        val name = URLEncoder.encode(Base64.encodeToString("Nocturne".toByteArray(), Base64.NO_WRAP), "UTF-8")
+        for (addr in listOf("wss://$ip:8002/api/v2/channels/samsung.remote.control?name=$name" + (token?.let { "&token=$it" } ?: ""),
+                            "ws://$ip:8001/api/v2/channels/samsung.remote.control?name=$name")) {
+            try { return WsClient(addr).also { it.connect(5000) } } catch (_: Exception) {}
         }
-        val ws = c ?: return "Couldn't reach the Samsung TV ($err). Check it's on and on the same Wi-Fi."
-        try {
+        return null
+    }
+
+    /** Connects; the TV asks Allow the first time. Some models close the connection while asking, so it reconnects until allowed. */
+    private fun ssRegister(tv: Tv, say: (String) -> Unit): Pair<WsClient?, String?> {
+        val end = System.currentTimeMillis() + 60_000
+        var tries = 0
+        while (System.currentTimeMillis() < end && tries < 8) {
+            tries++
+            val token = prefs.getString("ss:" + tv.ip, null)
+            val c = ssConnect(tv.ip, token) ?: return null to "Couldn't reach the Samsung TV. Check it's on and on the same Wi-Fi."
             say(if (token == null) "Look at the TV and choose Allow" else "Connecting…")
-            val end = System.currentTimeMillis() + 45_000
-            var ok = false
-            while (System.currentTimeMillis() < end && !ok) {
-                val m = ws.receive(2000) ?: continue
-                val j = JSONObject(m)
-                when (j.optString("event")) {
-                    "ms.channel.connect" -> { j.optJSONObject("data")?.optString("token")?.takeIf { it.isNotEmpty() }?.let { prefs.edit().putString("ss:" + tv.ip, it).apply() }; ok = true }
-                    "ms.channel.unauthorized" -> return "The TV didn't allow Nocturne. On the TV: Settings › General › External Device Manager › Device Connection Manager, allow \"Nocturne\", then try again."
-                    "ms.channel.timeOut" -> return "The TV stopped waiting. Try again and choose Allow on the TV."
+            try {
+                while (System.currentTimeMillis() < end) {
+                    val m = c.receive(2000) ?: continue
+                    val j = JSONObject(m)
+                    when (j.optString("event")) {
+                        "ms.channel.connect" -> { j.optJSONObject("data")?.optString("token")?.takeIf { it.isNotEmpty() }?.let { prefs.edit().putString("ss:" + tv.ip, it).apply() }; return c to null }
+                        "ms.channel.unauthorized" -> { c.close(); return null to "The TV didn't allow Nocturne. On the TV: Settings › General › External Device Manager › Device Connection Manager › Device List, allow \"Nocturne\" (or delete it there), then try again." }
+                        "ms.channel.timeOut" -> throw java.io.IOException("timeout")
+                    }
                 }
+            } catch (e: Exception) {
+                c.close()
+                // a remembered token the TV no longer knows makes it hang up: drop it and ask again
+                if (token != null) prefs.edit().remove("ss:" + tv.ip).apply()
+                say("Waiting for the TV… choose Allow on the TV if it asks")
+                Thread.sleep(1200)
             }
-            if (!ok) return "The TV didn't answer in time. Try again and choose Allow on the TV."
+        }
+        return null to "The TV kept closing the connection. Try again and choose Allow on the TV, or use the address below."
+    }
+
+    private fun openSamsung(tv: Tv, url: String, arrived: () -> Boolean, say: (String) -> Unit): String? {
+        fun launch(type: String) = JSONObject().put("method", "ms.channel.emit").put("params", JSONObject().put("event", "ed.apps.launch").put("to", "host")
+            .put("data", JSONObject().put("appId", "org.tizen.browser").put("action_type", type).put("metaTag", url))).toString()
+        // different Samsung years accept different launch types; try each until the TV loads the page
+        for (type in listOf("NATIVE_LAUNCH", "DEEP_LINK")) {
+            val (c, err) = ssRegister(tv, say)
+            if (c == null) return err
             say("Opening Nocturne on the TV…")
-            fun launch(type: String) = JSONObject().put("method", "ms.channel.emit").put("params", JSONObject().put("event", "ed.apps.launch").put("to", "host")
-                .put("data", JSONObject().put("appId", "org.tizen.browser").put("action_type", type).put("metaTag", url))).toString()
-            ws.send(launch("NATIVE_LAUNCH"))
-            // older and newer models answer differently; if the TV reports an error, try the other way of launching
-            val until = System.currentTimeMillis() + 3000
-            while (System.currentTimeMillis() < until) {
-                val m = ws.receive(800) ?: continue
-                val j = JSONObject(m)
-                if (j.optString("event").contains("error", true) || (j.optJSONObject("data")?.optInt("code", 200) ?: 200) >= 400) { ws.send(launch("DEEP_LINK")); break }
-            }
-            return null
-        } catch (e: Exception) { return "Lost the connection to the TV (${e.message})" } finally { ws.close() }
+            try { c.send(launch(type)); c.receive(1500) } catch (_: Exception) {}   // the TV may hang up after launching; that's fine
+            val ok = waitArrive(arrived, 10_000)
+            c.close()
+            if (ok) return null
+        }
+        return fallback
     }
 
     fun forget(tv: Tv) { prefs.edit().remove("lg:" + tv.ip).remove("ss:" + tv.ip).apply() }

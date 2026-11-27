@@ -24,6 +24,8 @@ class TvLink(private val ctx: Context, private val brain: Brain, private val ren
     companion object { const val FLOATS = 112; const val BYTES = 1024; const val PACKET = FLOATS * 4 + BYTES }
 
     @Volatile var port = 0; private set
+    /** What the TV reports about itself once a second: frame rate and resolution. */
+    @Volatile var tvInfo = ""
     @Volatile var running = false; private set
     val tvCount get() = clients.size
     private var server: ServerSocket? = null
@@ -126,14 +128,24 @@ class TvLink(private val ctx: Context, private val brain: Brain, private val ren
             val asset = when {
                 path == "/" || path == "/index.html" -> "tv/index.html"
                 path == "/pictures.json" -> "pictures.json"
+                path == "/awake.mp4" || path == "/awake.webm" -> "tv" + path
                 path.startsWith("/shaders/") || path.startsWith("/pics/") -> path.substring(1)
                 else -> null
             }
             val data = try { asset?.takeIf { !it.contains("..") }?.let { ctx.assets.open(it).use(InputStream::readBytes) } } catch (_: Exception) { null }
             if (data == null) { out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()); out.flush(); sock.close(); return }
-            val type = when { asset!!.endsWith(".html") -> "text/html; charset=utf-8"; asset.endsWith(".json") -> "application/json"; asset.endsWith(".jpg") -> "image/jpeg"; asset.endsWith(".png") -> "image/png"; else -> "text/plain; charset=utf-8" }
-            out.write("HTTP/1.1 200 OK\r\nContent-Type: $type\r\nContent-Length: ${data.size}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n".toByteArray())
-            out.write(data); out.flush(); sock.close()
+            val type = when { asset!!.endsWith(".html") -> "text/html; charset=utf-8"; asset.endsWith(".json") -> "application/json"; asset.endsWith(".jpg") -> "image/jpeg"; asset.endsWith(".png") -> "image/png"; asset.endsWith(".mp4") -> "video/mp4"; asset.endsWith(".webm") -> "video/webm"; else -> "text/plain; charset=utf-8" }
+            // video players ask for byte ranges
+            val range = headers["range"]?.let { Regex("bytes=(\\d*)-(\\d*)").find(it) }
+            if (range != null) {
+                val a = range.groupValues[1].toIntOrNull() ?: 0; val z = min(data.size - 1, range.groupValues[2].toIntOrNull() ?: (data.size - 1))
+                out.write("HTTP/1.1 206 Partial Content\r\nContent-Type: $type\r\nAccept-Ranges: bytes\r\nContent-Range: bytes $a-$z/${data.size}\r\nContent-Length: ${z - a + 1}\r\nConnection: close\r\n\r\n".toByteArray())
+                out.write(data, a, z - a + 1)
+            } else {
+                out.write("HTTP/1.1 200 OK\r\nContent-Type: $type\r\nAccept-Ranges: bytes\r\nContent-Length: ${data.size}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n".toByteArray())
+                out.write(data)
+            }
+            out.flush(); sock.close()
         } catch (_: Exception) { try { sock.close() } catch (_: Exception) {} }
     }
 
@@ -143,7 +155,8 @@ class TvLink(private val ctx: Context, private val brain: Brain, private val ren
         val c = Client(sock, out); clients.add(c)
         // the TV only ever sends pings and closes; read them on their own thread
         Thread({
-            try { while (true) { val (op, d) = WsFrame.read(inp); if (op == 8) break; if (op == 9) synchronized(c) { WsFrame.write(out, 10, d, false) } } } catch (_: Exception) {}
+            try { while (true) { val (op, d) = WsFrame.read(inp); if (op == 8) break; if (op == 9) synchronized(c) { WsFrame.write(out, 10, d, false) }
+                if (op == 1) try { val j = org.json.JSONObject(String(d)); tvInfo = "${j.optInt("fps")} fps · ${j.optInt("w")}×${j.optInt("h")}" + (if (j.optDouble("scale", 1.0) < 1) " · effects at ${(j.optDouble("scale") * 100).toInt()}%" else "") } catch (_: Exception) {} } } catch (_: Exception) {}
             clients.remove(c); try { sock.close() } catch (_: Exception) {}
         }, "tv-read").start()
         try {
