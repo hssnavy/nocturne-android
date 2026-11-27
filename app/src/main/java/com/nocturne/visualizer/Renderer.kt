@@ -88,7 +88,7 @@ class Renderer(private val ctx: Context, private val pics: List<Pic>, private va
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         var w = max(1, width); var h = max(1, height)
-        val maxPx = 3840 * 2160
+        val maxPx = if (Settings.quality == "balanced") 1920 * 1080 else 3840 * 2160
         if (w * h > maxPx) { val k = sqrt(maxPx.toFloat() / (w * h)); w = (w * k).toInt(); h = (h * k).toInt() }
         W = w; H = h; viewW = max(1, width); viewH = max(1, height)
     }
@@ -154,6 +154,7 @@ class Renderer(private val ctx: Context, private val pics: List<Pic>, private va
 
     // keep the frame rate at the screen's refresh rate: render the effects a little smaller only when needed
     private fun adapt(dt: Float, now: Double) {
+        if (Settings.quality != "auto") { step = 0; return }
         dts.addLast(dt); if (dts.size > 120) dts.removeFirst()
         if (dts.size < 60 || now - lastChange < 1500) return
         val sorted = dts.sorted(); val refresh = min(sorted[sorted.size / 10], 1f / 55)
@@ -205,7 +206,10 @@ class Renderer(private val ctx: Context, private val pics: List<Pic>, private va
         f1(PS, "uLowA", min(1.8f, L[0] + Hh[0] * 0.45f + b.chLev[10] * 0.35f))
         f1(PS, "uEnergy", b.Eg); f1(PS, "uInt", b.int_); f1(PS, "uAggr", b.aggr)
         fv(PS, "uCh", b.chLev); fv(PS, "uChHit", b.chHit)
-        f1(PS, "uMode", si.toFloat()); f1(PS, "uBars", 48f); f1(PS, "uLayout", 0f); f1(PS, "uBassMid", 0f); f1(PS, "uSeg", 0f); f1(PS, "uColor", 0f); f1(PS, "uPeakOn", 1f)
+        val S = Settings
+        f1(PS, "uMode", si.toFloat()); f1(PS, "uBars", S.bars.toFloat()); f1(PS, "uLayout", when (S.layout) { "center" -> 1f; "top" -> 2f; else -> 0f })
+        f1(PS, "uBassMid", if (S.bass == "middle") 1f else 0f); f1(PS, "uSeg", if (S.seg) 1f else 0f)
+        f1(PS, "uColor", when (S.color) { "palette" -> 1f; "heat" -> 2f; "rainbow" -> 3f; else -> 0f }); f1(PS, "uPeakOn", if (S.peaks == "off") 0f else 1f)
         f1(PS, "uImgAsp", picW / picH); f1(PS, "uAssemble", b.assemble)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
 
@@ -215,8 +219,8 @@ class Renderer(private val ctx: Context, private val pics: List<Pic>, private va
         GLES30.glUseProgram(PC)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0); GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, scene[0])
         GLES30.glActiveTexture(GLES30.GL_TEXTURE1); GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, src[0])
-        val f60 = dt * 60 * b.tempo; val calmFade = 2.2f - 1.2f * b.E; val trip = 0.5f
-        val decay = if (st.decay <= 0.02f) 0f else if (st.keep) (st.decay - 0.02f).pow(dt * 60 * calmFade) else min(0.93f, st.decay - 0.2f).pow(dt * 60 * calmFade)
+        val f60 = dt * 60 * b.tempo; val calmFade = 2.2f - 1.2f * b.E; val trip = Settings.trip; val tr = when (Settings.trails) { "off" -> 0f; "long" -> 1.6f; else -> 1f }
+        val decay = if (st.decay <= 0.02f) 0f else if (st.keep) (st.decay - 0.02f).pow(dt * 60 * calmFade) else if (tr == 0f) 0f else min(0.93f, st.decay - 0.2f + (tr - 1) * 0.16f).pow(dt * 60 * calmFade)
         f1(PC, "uWarp", (st.warp * L[2] * 1.3f + trip * L[2]) * b.E)
         f1(PC, "uHue", (st.hue + trip * 0.0015f) * L[1] * 1.4f * b.E * f60)
         f1(PC, "uTime", C[2] * 1.5f)
@@ -226,9 +230,9 @@ class Renderer(private val ctx: Context, private val pics: List<Pic>, private va
         f1(PC, "uRot", st.rot * L[1] * 1.6f * b.E * f60)
         f1(PC, "uDecay", decay)
         f1(PC, "uAberr", (Hh[0] * 0.004f + Hh[2] * 0.002f) * b.E)
-        f1(PC, "uFlash", Hh[0] * Hh[0] * 0.05f * b.E)
+        f1(PC, "uFlash", if (Settings.flash) Hh[0] * Hh[0] * 0.05f * b.E else 0f)
         f3(PC, "uFlashCol", pic.pal[1])
-        f1(PC, "uRed", b.red); f1(PC, "uAggr", b.aggr)
+        f1(PC, "uRed", if (Settings.peakred) b.red else 0f); f1(PC, "uAggr", if (Settings.aggcolor) b.aggr else 0f)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0); GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dst[0]); GLES30.glGenerateMipmap(GLES30.GL_TEXTURE_2D)

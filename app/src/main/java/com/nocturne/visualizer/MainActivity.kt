@@ -58,9 +58,7 @@ class MainActivity : Activity() {
     private lateinit var seek: SeekBar
     private lateinit var timeText: TextView
     private lateinit var playBtn: TextView
-    private lateinit var strRow: LinearLayout
     private val styleButtons = ArrayList<TextView>()
-    private val strButtons = HashMap<Int, TextView>()
     private val sourceButtons = HashMap<String, TextView>()
     private val ui = Handler(Looper.getMainLooper())
     private var source = ""                 // "device", "mic", "demo" or ""
@@ -85,10 +83,10 @@ class MainActivity : Activity() {
         }
         useHighestRefreshRate()
         pics = loadPictures()
+        Settings.load(this)
         demo = DemoPlayer(this)
         brain = Brain(this)
         val prefs = getPreferences(MODE_PRIVATE)
-        brain.strings = prefs.getInt("strings", 3)
         minimised = prefs.getBoolean("min", false)
         screenShare = prefs.getBoolean("share", false)
 
@@ -197,9 +195,7 @@ class MainActivity : Activity() {
         styleButtons.clear()
         val styleRow = row(label("Style"))
         STYLES.forEachIndexed { i, s -> val b = pill(s.name) { setStyle(i) }; styleButtons.add(b); styleRow.addView(b, lp()) }
-        val r1 = row(prev, picName, next)
-        strRow = row(label("Strings"))
-        for (n in intArrayOf(1, 3, 5, 7)) { val b = pill("$n") { setStrings(n) }; strButtons[n] = b; strRow.addView(b, lp()) }
+        val r1 = row(prev, picName, next, pill("Settings") { showSettings() })
 
         sourceButtons["device"] = pill("This phone") { toggle("device") }
         sourceButtons["mic"] = pill("Microphone") { toggle("mic") }
@@ -245,7 +241,6 @@ class MainActivity : Activity() {
             background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(Color.argb(190, 10, 12, 16)); setStroke(dp(1), Color.argb(33, 233, 237, 242)) }
             addView(scroll(r1))
             addView(scroll(styleRow), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
-            addView(scroll(strRow), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
             addView(scroll(r3), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
             addView(scroll(seekRow), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
         }
@@ -299,6 +294,79 @@ class MainActivity : Activity() {
             box.animate().translationY(0f).translationX(0f).scaleX(1f).scaleY(1f).alpha(1f)
                 .setDuration(340).setInterpolator(android.view.animation.DecelerateInterpolator()).withEndAction(null).start()
         }
+        showBar()
+    }
+
+    // ---------------- settings ----------------
+
+    private var settingsView: View? = null
+    private fun showSettings() {
+        if (settingsView != null) return
+        val root = window.decorView.findViewById<FrameLayout>(android.R.id.content)
+        val shade = FrameLayout(this).apply { setBackgroundColor(Color.argb(215, 4, 5, 8)); alpha = 0f; isClickable = true }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(60), dp(20), dp(30)) }
+        fun hint(t: String) = TextView(this).apply { text = t; textSize = 11f; setTextColor(muted); setPadding(dp(2), dp(2), 0, 0) }
+        fun section(title: String, h: String? = null): LinearLayout {
+            val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(10), 0, dp(10)) }
+            box.addView(TextView(this).apply { text = title; textSize = 13f; setTextColor(fg) })
+            if (h != null) box.addView(hint(h))
+            list.addView(box); return box
+        }
+        fun <T> choice(title: String, opts: List<Pair<T, String>>, get: () -> T, set: (T) -> Unit, h: String? = null) {
+            val box = section(title, h); val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val btns = ArrayList<Pair<T, TextView>>()
+            for ((v, name) in opts) { val b = pill(name) { set(v); Settings.save(this); btns.forEach { (vv, bb) -> setOn(bb, vv == get()) } }; btns.add(v to b); r.addView(b, lp()) }
+            btns.forEach { (vv, bb) -> setOn(bb, vv == get()) }
+            box.addView(scroll(r), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) })
+        }
+        val S = Settings
+        // sensitivity slider
+        run {
+            val box = section("Sensitivity", "Raise it for quiet music or the microphone.")
+            val v = TextView(this).apply { setTextColor(fg); textSize = 12f; typeface = Typeface.MONOSPACE; text = "%.2f".format(S.sens) }
+            val sb = SeekBar(this).apply {
+                max = 270; progress = ((S.sens - 0.3f) * 100).toInt()
+                progressTintList = ColorStateList.valueOf(accent); thumbTintList = ColorStateList.valueOf(accent)
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(sb: SeekBar, p: Int, u: Boolean) { S.sens = 0.3f + p / 100f; v.text = "%.2f".format(S.sens) }
+                    override fun onStartTrackingTouch(sb: SeekBar) {}
+                    override fun onStopTrackingTouch(sb: SeekBar) { Settings.save(this@MainActivity) }
+                })
+            }
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            r.addView(sb, LinearLayout.LayoutParams(dp(240), ViewGroup.LayoutParams.WRAP_CONTENT)); r.addView(v)
+            box.addView(r)
+        }
+        choice("Wave strings", listOf(1 to "1", 3 to "3", 5 to "5", 7 to "7"), { S.strings }, { S.strings = it }, "How many strings share the spectrum, 20 Hz to 20 kHz.")
+        choice("Response", listOf("smooth" to "Smooth", "fast" to "Fast", "instant" to "Instant"), { S.response }, { S.response = it })
+        choice("Bars", listOf(24 to "24", 48 to "48", 72 to "72", 96 to "96"), { S.bars }, { S.bars = it })
+        choice("Peak markers", listOf("off" to "Off", "slow" to "Slow fall", "fast" to "Fast fall"), { S.peaks }, { S.peaks = it })
+        choice("Direction", listOf("bottom" to "Bottom up", "center" to "Center out", "top" to "Top down"), { S.layout }, { S.layout = it })
+        choice("Bass position", listOf("left" to "Left", "middle" to "Middle"), { S.bass }, { S.bass = it })
+        choice("LED segments", listOf(false to "Off", true to "On"), { S.seg }, { S.seg = it })
+        choice("Trippy", listOf(0f to "Off", 0.5f to "On", 1f to "Max"), { S.trip }, { S.trip = it }, "Bends, spins and shifts the colours of the trails.")
+        choice("Colour follows intensity", listOf(false to "Off", true to "On"), { S.aggcolor }, { S.aggcolor = it })
+        choice("Red at peaks", listOf(false to "Off", true to "On"), { S.peakred }, { S.peakred = it })
+        choice("Colour", listOf("picture" to "Picture", "palette" to "Palette", "heat" to "Heat", "rainbow" to "Rainbow"), { S.color }, { S.color = it })
+        choice("Trails", listOf("off" to "Off", "short" to "Short", "long" to "Long"), { S.trails }, { S.trails = it })
+        choice("Beat flash", listOf(false to "Off", true to "On"), { S.flash }, { S.flash = it })
+        choice("Screen shake", listOf(false to "Off", true to "On"), { S.shake }, { S.shake = it })
+        choice("Quality", listOf("auto" to "Auto (smoothest)", "balanced" to "Balanced", "high" to "High (up to 4K)"), { S.quality }, { S.quality = it },
+            "Auto lowers the detail slightly when needed to keep the full frame rate.")
+        list.addView(pill("Reset to defaults") { Settings.reset(); Settings.save(this); closeSettings(); showSettings() },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(16) })
+        val sv = android.widget.ScrollView(this).apply { addView(list) }
+        shade.addView(sv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        shade.addView(TextView(this).apply { text = "Settings"; textSize = 16f; setTextColor(fg); setPadding(dp(20), dp(18), dp(20), dp(10)) },
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
+        shade.addView(pill("Close") { closeSettings() }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply { topMargin = dp(12); rightMargin = dp(14) })
+        root.addView(shade, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        shade.animate().alpha(1f).setDuration(220).start()
+        settingsView = shade
+    }
+    private fun closeSettings() {
+        val v = settingsView ?: return; settingsView = null
+        v.animate().alpha(0f).setDuration(200).withEndAction { (v.parent as? ViewGroup)?.removeView(v) }.start()
         showBar()
     }
 
@@ -385,18 +453,10 @@ class MainActivity : Activity() {
         refreshButtons()
     }
 
-    private fun setStrings(n: Int) {
-        brain.strings = n
-        getPreferences(MODE_PRIVATE).edit().putInt("strings", n).apply()
-        refreshButtons()
-    }
 
     private fun refreshButtons() {
         picName.text = pics[picIndex].name
         styleButtons.forEachIndexed { i, b -> setOn(b, i == renderer.style) }
-        strRow.visibility = if (STYLES[renderer.style].id == "wave") View.VISIBLE else View.GONE
-        (strRow.parent as? View)?.visibility = strRow.visibility
-        for ((k, b) in strButtons) setOn(b, k == brain.strings)
         for ((k, b) in sourceButtons) setOn(b, k == source)
         seekRow.visibility = if (source == "demo") View.VISIBLE else View.GONE
         (seekRow.parent as? View)?.visibility = seekRow.visibility
@@ -543,7 +603,7 @@ class MainActivity : Activity() {
     }
 
     @Deprecated("Back closes the picture chooser first")
-    override fun onBackPressed() { if (picker != null) closePicker() else @Suppress("DEPRECATION") super.onBackPressed() }
+    override fun onBackPressed() { if (settingsView != null) closeSettings() else if (picker != null) closePicker() else @Suppress("DEPRECATION") super.onBackPressed() }
 
     override fun onResume() { super.onResume(); gl.onResume() }
     override fun onPause() { gl.onPause(); super.onPause() }

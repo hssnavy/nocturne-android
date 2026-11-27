@@ -22,6 +22,8 @@ import kotlin.math.sqrt
 
 /** Spectrum of the newest N samples, exactly like the browser's analyser (Blackman window, -100..-18 dB -> 0..255). */
 class Spectrum(val n: Int) {
+    var smoothing = 0f
+    private val mag = DoubleArray(n / 2)
     private val fft = Fft(n)
     private val win = FloatArray(n) { (0.42 - 0.5 * cos(2 * PI * it / n) + 0.08 * cos(4 * PI * it / n)).toFloat() }
     private val re = FloatArray(n); private val im = FloatArray(n)
@@ -37,7 +39,8 @@ class Spectrum(val n: Int) {
         var i = 1
         while (i * hz < 80) { val m = sqrt((re[i] * re[i] + im[i] * im[i]).toDouble()) / n; subPower += m * m; i++ }
         for (k in 0 until n / 2) {
-            val m = sqrt((re[k] * re[k] + im[k] * im[k]).toDouble()) / n
+            val m0 = sqrt((re[k] * re[k] + im[k] * im[k]).toDouble()) / n
+            mag[k] = smoothing * mag[k] + (1 - smoothing) * m0; val m = mag[k]
             val db = 20 * log10(m + 1e-12)
             bytes[k] = floor(min(1.0, max(0.0, (db + 100) / 82)) * 255).toInt()
         }
@@ -52,10 +55,10 @@ class Spectrum(val n: Int) {
  */
 class Brain(ctx: Context) {
     // settings (same defaults as the web page)
-    var sens = 1.1f
-    @Volatile var strings = 3
-    private val relR = 20f          // response: instant
-    private val fall = 1.3f         // peak markers: fast fall
+    val strings get() = Settings.strings
+    private val sens get() = Settings.sens
+    private val relR get() = when (Settings.response) { "smooth" -> 5f; "fast" -> 10f; else -> 20f }
+    private val fall get() = when (Settings.peaks) { "off" -> 99f; "slow" -> 0.35f; else -> 1.3f }
 
     companion object {
         const val SPEC_N = 128; const val WAVE_N = 256; const val TONE_N = 256
@@ -184,7 +187,7 @@ class Brain(ctx: Context) {
                     core = max(core, ks)
                     hit[0] = max(hit[0], ks * min(1f, 0.4f + Eg))
                     lastHit[0] = now; kickT = now
-                    if (E > 0.55f) { val ang = Math.random() * PI * 2; val m = 0.006f * int_ * ks; shake[0] = (cos(ang) * m).toFloat(); shake[1] = (sin(ang) * m).toFloat() }
+                    if (Settings.shake && E > 0.55f) { val ang = Math.random() * PI * 2; val m = 0.006f * int_ * ks; shake[0] = (cos(ang) * m).toFloat(); shake[1] = (sin(ang) * m).toFloat() }
                 }
             }
             val raw = floatArrayOf(pw(T, hz, 60.0, 200.0), pw(T, hz, 200.0, 800.0), pw(T, hz, 3000.0, 10000.0), pw(T, hz, 0.0, sr / 2.0), (k / max(1, kn)).toFloat())
@@ -248,6 +251,7 @@ class Brain(ctx: Context) {
         val freq = an.bytes
         if (live) {
             val end = ring.total
+            an.smoothing = when (Settings.response) { "smooth" -> 0.5f; "fast" -> 0.15f; else -> 0f }
             ring.read(end, 1024, an.samples); an.compute(sr)
             ring.read(end, 4096, tone4.samples); tone4.compute(sr)
             for (i in 0 until 1024) tdata[i] = max(0, min(255, (128 * (1 + an.samples[i])).toInt()))
@@ -342,7 +346,7 @@ class Brain(ctx: Context) {
             for (i in 0 until TONE_N) { toneV[i] *= exp(-dt * 6); toneBytes[i] = min(255f, toneV[i] * 196).toInt().toByte(); toneVs[i] *= exp(-dt * 6); toneSBytes[i] = min(255f, toneVs[i] * 196).toInt().toByte(); toneDb[i] = -200f }
         }
         for (i in 0 until SPEC_N) {
-            peak[i] = max(peak[i] - fall * dt, spec[i])
+            peak[i] = if (fall > 50) spec[i] else max(peak[i] - fall * dt, spec[i])
             specBytes[i] = min(255f, spec[i] * 255).toInt().toByte(); peakBytes[i] = min(255f, peak[i] * 255).toInt().toByte()
         }
 
