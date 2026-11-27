@@ -3,7 +3,7 @@ uniform sampler2D uTex, uSpec, uPeak, uWave, uTone, uToneS;
 uniform vec3 uPal0, uPal1, uPal2, uPal3;
 uniform vec2 uRes, uShake;
 // lows / mids / highs: smoothed level (1 ~ typical for this song), hits (0-1, transients), and their own clocks
-uniform float uBgT;
+uniform float uBgT, uE;
 uniform float uLowA, uWaveK, uNStr, uCore, uKAge, uTravel, uSpeed, uSpin, uHyE; uniform float uStr[7]; uniform float uFlow[7]; uniform float uSHit[7]; uniform float uSAge[7]; uniform float uSWK[7]; uniform float uSGlow[7];
 uniform float uLow, uMid, uHigh, uLowHit, uMidHit, uHighHit, uLowT, uMidT, uHighT;
 // 10-band equaliser channels (31 Hz ... 16 kHz) + the .1 sub channel (index 10)
@@ -155,7 +155,7 @@ void main(){
       y += pulse*(mod(fk, 2.) < 0.5 ? 1. : -1.);
       float kd = (Xr - uKAge*2.6)/0.14;                             // the kick drum's own wave, rolling in from the right
       y -= kick*exp(-kd*kd)*(0.05 + 0.08*uEnergy)*envR;
-      y *= 0.12 + 0.88*smoothstep(0.12, 0.75, uEnergy);             // low energy: the strings settle toward flat (sensitivity unchanged)
+      y *= 0.05 + 0.95*pow(smoothstep(0.2, 0.85, uE), 1.3);        // low energy: the strings settle almost flat (sensitivity unchanged)
       y += (fk - (n - 1.)*0.5)*0.012*min(1., 3./n);                 // strings sit just apart
       float d = abs(q.y - y);
       float thick = 0.0013 + tl*0.0022 + hit*0.0022 + tc*0.002;

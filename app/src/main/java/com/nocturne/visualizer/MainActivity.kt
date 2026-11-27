@@ -115,9 +115,9 @@ class MainActivity : Activity() {
         hud = TextView(this).apply { setTextColor(Color.argb(170, 233, 237, 242)); textSize = 13f; setPadding(dp(18), dp(16), dp(18), dp(8)) }
         root.addView(hud, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
         bar = buildBar()
-        // the credit, faint and small, on the main screen (top-right)
-        root.addView(TextView(this).apply { text = "by Hassan Al-Yunis"; textSize = 10f; letterSpacing = 0.05f; setTextColor(Color.argb(80, 233, 237, 242)); setPadding(dp(18), dp(18), dp(18), dp(8)) },
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END))
+        // the credit, faint and small, on the main screen (bottom-left)
+        root.addView(TextView(this).apply { text = "by Hassan Al-Yunis"; textSize = 10f; letterSpacing = 0.05f; setTextColor(Color.argb(80, 233, 237, 242)); setPadding(dp(18), dp(8), dp(18), dp(12)) },
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.START))
         root.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM).apply { bottomMargin = dp(12); leftMargin = dp(10); rightMargin = dp(10) })
         setContentView(root)
         hideSystemBars()
