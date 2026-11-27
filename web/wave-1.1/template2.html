@@ -1,0 +1,1730 @@
+<title>Nocturne Preview</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* Layout: the visual fills the screen; one control bar floats at the bottom and fades while music plays; settings open as a sheet above it. */
+:root{
+  --void:#000;
+  --ink:#e9edf2;
+  --dim:#8a93a0;
+  --glass:rgba(10,12,16,.78);
+  --line:rgba(233,237,242,.13);
+  --ember:#ff6a2b;
+  --font-ui:"Sora",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-num:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%;background:var(--void);color:var(--ink);font-family:var(--font-ui);overflow:hidden}
+[hidden]{display:none!important}
+canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background:var(--void)}
+.hud{position:fixed;top:calc(env(safe-area-inset-top,0px) + 18px);left:max(18px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:4px;pointer-events:none;transition:opacity .6s}
+.hud .num{font-family:var(--font-num);font-size:11px;letter-spacing:.14em;color:var(--dim)}
+.hud .name{font-weight:300;font-size:20px;letter-spacing:.02em}
+.hud .opt{font-size:12px;color:var(--dim);letter-spacing:.06em}
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:4;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 14px);padding-top:14px;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));display:flex;justify-content:center;transition:opacity .6s,transform .6s}
+.panel{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:center;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:14px;padding:10px 14px;max-width:1240px}
+.group{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.label{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin-right:2px}
+button{font:inherit;font-size:13px;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:999px;padding:7px 13px;cursor:pointer;transition:background .2s,border-color .2s;position:relative}
+button:hover{background:rgba(233,237,242,.07)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--ember);outline-offset:2px}
+button.on{border-color:var(--ember);color:#fff;background:rgba(255,106,43,.16)}
+button.rec::after{content:"";position:absolute;top:3px;right:5px;width:5px;height:5px;border-radius:50%;background:var(--ember)}
+button.icon{width:34px;height:34px;padding:0;display:grid;place-items:center}
+input[type=range]{accent-color:var(--ember);width:150px}
+#seekr{width:min(380px,58vw)}
+#teach{flex-basis:100%;justify-content:center}
+#teachr{width:min(260px,60vw)}
+#curve{width:min(900px,92vw);height:44px;border:1px solid var(--line);border-radius:6px;background:#000;cursor:pointer}
+#teach .hint{font-size:11px;color:var(--dim);min-width:120px}
+#seek .icon{width:40px;font-size:11px}
+.bands{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.band{display:flex;flex-direction:column;gap:4px}
+.band span{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+.band b{display:block;width:46px;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
+.band b i{display:block;height:100%;width:0;background:var(--ember)}
+.band.hit span{color:#fff}
+.band.hit b i{background:#fff}
+.chs{display:flex;gap:3px;align-items:flex-end}
+.ch{display:flex;flex-direction:column;align-items:center;gap:3px}
+.ch b{display:flex;align-items:flex-end;width:9px;height:22px;border-radius:2px;background:var(--line);overflow:hidden}
+.ch b i{display:block;width:100%;height:0;background:var(--ember)}
+.ch span{font-family:var(--font-num);font-size:8px;color:var(--dim)}
+.ch.sub b{width:14px}
+.ch.hit b i{background:#fff}
+.ch.hit span{color:#fff}
+.panel{position:relative}
+#minBtn{position:absolute;top:6px;right:6px;width:28px;height:24px;padding:0;border:0;border-radius:8px;display:grid;place-items:center;background:transparent;color:var(--muted, #8a93a0)}
+#credit{position:fixed;left:max(16px,env(safe-area-inset-left,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 10px);z-index:3;font-size:11px;letter-spacing:.05em;color:#e9edf2;opacity:.3;pointer-events:none;user-select:none}
+#minBtn:hover,#maxBtn:hover{color:var(--fg, #e9edf2)}
+.panel{padding-right:40px}
+#maxBtn{display:none;position:absolute;right:max(14px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 14px);width:40px;height:32px;padding:0;border-radius:10px;color:var(--fg, #e9edf2);background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.bar.min{pointer-events:none}.bar.min #maxBtn{pointer-events:auto}
+.bar.min .panel{display:none}
+.bar.min #maxBtn{display:grid;place-items:center}
+.hidden-ui .bar{opacity:0;transform:translateY(16px);pointer-events:none}
+.hidden-ui .hud{opacity:0}
+.hidden-ui{cursor:none}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:6;max-height:78%;overflow:auto;background:rgba(4,5,7,.95);border-top:1px solid var(--line);padding-block:16px calc(env(safe-area-inset-bottom,0px) + 18px);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.sheet-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+.sheet-head h2{font-weight:400;font-size:15px;margin:0;letter-spacing:.04em}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.grid button{border-radius:10px;padding:0;overflow:hidden;display:flex;flex-direction:column;text-align:left;background:#050608}
+.grid img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}
+.grid span{padding:7px 9px;font-size:12px;color:var(--dim)}
+.grid button.on span{color:#fff}
+.rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px 28px;max-width:1200px}
+.row{display:flex;flex-direction:column;gap:8px;min-width:0}
+.row .seg{display:flex;flex-wrap:wrap;gap:6px}
+.row .hint{font-size:11px;color:var(--dim)}
+.val{font-family:var(--font-num);font-size:11px;color:var(--ink);min-width:34px}
+.row .val{font-family:var(--font-num);font-size:11px;color:var(--ink)}
+.toast{position:fixed;z-index:8;top:calc(env(safe-area-inset-top,0px) + 18px);left:50%;transform:translateX(-50%);max-width:min(560px,calc(100% - 32px));background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:13px;line-height:1.45;backdrop-filter:blur(12px)}
+.file{display:none}
+@media (max-width:640px){.hud .name{font-size:16px}.panel{gap:8px 10px;padding:9px 10px}button{padding:6px 10px;font-size:12px}}
+@media (prefers-reduced-motion:reduce){.bar,.hud{transition:none}}
+</style>
+
+<canvas id="gl" aria-label="Music visualizer"></canvas>
+
+<div class="hud" aria-live="polite">
+  <div class="num" id="num"></div>
+  <div class="name" id="pname"></div>
+  <div class="opt" id="oname"></div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<div class="sheet" id="picsheet" hidden>
+  <div class="sheet-head"><h2>Pictures</h2><button data-close="picsheet">Close</button></div>
+  <div class="grid" id="grid"></div>
+</div>
+
+<div class="sheet" id="setsheet" hidden>
+  <div class="sheet-head"><h2>Equalizer settings</h2><div class="group"><button id="reset">Reset</button><button data-close="setsheet">Close</button></div></div>
+  <div class="rows" id="rows"></div>
+</div>
+
+<div id="credit">by Hassan Al-Yunis</div>
+<div class="bar">
+  <button id="maxBtn" aria-label="Show the controls" title="Show controls"><svg width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M2 8l6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <div class="panel">
+    <button id="minBtn" aria-label="Minimise the controls" title="Minimise"><svg width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M2 2l6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <div class="group">
+      <button class="icon" id="prev" aria-label="Previous picture">‹</button>
+      <button id="pics">Pictures</button>
+      <button class="icon" id="next" aria-label="Next picture">›</button>
+    </div>
+    <div class="group" id="styles"><span class="label">Style</span></div>
+    <div class="group" id="strs" hidden><span class="label">Strings</span><button data-n="1">1</button><button data-n="3">3</button><button data-n="5">5</button><button data-n="7">7</button></div>
+    <div class="group" id="srcs">
+      <span class="label">Sound</span>
+      <button data-src="demo">Demo track</button>
+      <button data-src="file">Music file</button>
+      <button data-src="mic">Microphone</button>
+      <button data-src="system" id="sysBtn">This device</button>
+    </div>
+    <div class="group" id="seek" hidden>
+      <button class="icon" id="playp" aria-label="Pause" title="Pause / play">❚❚</button>
+      <button class="icon" id="back10" aria-label="Back 10 seconds" title="Back 10 s">−10</button>
+      <span class="val" id="tcur">0:00</span>
+      <input type="range" id="seekr" min="0" max="1000" value="0" step="1" aria-label="Position in the track">
+      <span class="val" id="tdur">0:00</span>
+      <button class="icon" id="fwd10" aria-label="Forward 10 seconds" title="Forward 10 s">+10</button>
+      <button id="teachBtn">Teach energy</button>
+    </div>
+    <div class="group" id="teach" hidden>
+      <span class="label">Energy now</span>
+      <input type="range" id="teachr" min="0" max="10" step="0.1" value="3" aria-label="Energy at this moment (0-100)">
+      <span class="val" id="teachv">30</span>
+      <canvas id="curve" width="900" height="44" aria-label="Energy curve for the track"></canvas>
+      <button id="useTaught" class="on">Using my energy</button>
+      <button id="clearTaught">Clear</button>
+      <span class="hint" id="teachMsg"></span>
+    </div>
+    <div class="group">
+      <div class="bands" title="What the music is doing right now">
+        <div class="chs" id="chs" aria-hidden="true"></div>
+        <div class="band"><span>Energy</span><b><i id="m-energy"></i></b></div>
+        <span class="val" id="m-bpm">— BPM</span>
+      </div>
+      <button id="setbtn">Settings</button>
+      <button id="fs">Full screen</button>
+    </div>
+  </div>
+</div>
+<input type="file" accept="audio/*" class="file" id="filein">
+
+<script>
+const PICS = /*__DATA__*/[];
+let meterEls, bpmEl, energyEl;
+
+const STYLES = [
+  {id:'bars',    name:'Spectrum bars', fb:{zoom:1.000, rot:0,      shift:[0,0.0015], decay:0.80}},
+  {id:'radial',  name:'Radial',        fb:{zoom:1.005, rot:0.0008, shift:[0,0],      decay:0.86}},
+  {id:'wave',    name:'Wave',          fb:{zoom:1, rot:0, shift:[0,0], decay:0, keep:true}},   // no trails: a clean, calm line
+  {id:'tunnel',  name:'Tunnel',        fb:{zoom:1.006, rot:0.001,  shift:[0,0],      decay:0.72}},
+  {id:'kaleido', name:'Kaleidoscope',  fb:{zoom:1.004, rot:-0.0012,shift:[0,0],      decay:0.80}},
+  {id:'shatter', name:'Shatter',       fb:{zoom:1.006, rot:0,      shift:[0,0],      decay:0.62}},
+  {id:'rise',    name:'Rising sparks', fb:{zoom:1.000, rot:0,      shift:[0,0.0015], decay:0.86}},
+  {id:'warp',    name:'Warp',          fb:{zoom:1.008, rot:0.002,  shift:[0,0],      decay:0.965, keep:true, warp:1, hue:0.002}},
+  {id:'fractal', name:'Fractal',       fb:{zoom:1.003, rot:0.0008, shift:[0,0],      decay:0.75, hue:0.0012}},
+  {id:'hyper',   name:'Light speed',   fb:{zoom:1.010, rot:0,      shift:[0,0],      decay:0.72}},
+];
+
+const DEFAULTS = {aggcolor:'on', trip:0.5, peakred:'on', sens:1.1, response:'instant', bars:48, peaks:'fast', layout:'bottom', bass:'left', seg:'off', color:'picture', trails:'short', flash:'on', shake:'on',
+  quality:'auto', strings:3};
+let S = Object.assign({}, DEFAULTS);
+let styleByPic = {};
+try {
+  const st = JSON.parse(localStorage.getItem('nocturne10') || '{}');
+  if(st.S) S = Object.assign({}, DEFAULTS, st.S);
+  if(!st.sens11 && [0.9, 1, 1.2].includes(+S.sens)) S.sens = 1.1;   // default sensitivity 1.1 (once; a value you set yourself stays)
+  if(st.styles) styleByPic = st.styles;
+} catch(e){}
+function save(){ try { localStorage.setItem('nocturne10', JSON.stringify({S, styles:styleByPic, p:picIndex, sens11:true})); } catch(e){} }
+
+const SETTINGS = [
+  {k:'sens', label:'Sensitivity', type:'range', min:0.3, max:3, step:0.05, hint:'Raise it for quiet music or the microphone.'},
+  {k:'response', label:'Response', opts:[['smooth','Smooth'],['fast','Fast'],['instant','Instant']]},
+  {k:'bars', label:'Bars', opts:[[24,'24'],[48,'48'],[72,'72'],[96,'96']]},
+  {k:'peaks', label:'Peak markers', opts:[['off','Off'],['slow','Slow fall'],['fast','Fast fall']]},
+  {k:'layout', label:'Direction', opts:[['bottom','Bottom up'],['center','Center out'],['top','Top down']]},
+  {k:'bass', label:'Bass position', opts:[['left','Left'],['middle','Middle']]},
+  {k:'seg', label:'LED segments', opts:[['off','Off'],['on','On']]},
+  {k:'trip', label:'Trippy', opts:[[0,'Off'],[0.5,'On'],[1,'Max']], hint:'Bends, spins and shifts the colours of the trails.'},
+  {k:'aggcolor', label:'Colour follows intensity', opts:[['off','Off'],['on','On']], hint:'Colours shift and deepen as the music gets more aggressive.'},
+  {k:'peakred', label:'Red at peaks', opts:[['off','Off'],['on','On']], hint:'Turns red only at the loudest moments of the track.'},
+  {k:'color', label:'Colour', opts:[['picture','Picture'],['palette','Palette'],['heat','Heat (palette)'],['rainbow','Rainbow']], hint:'Picture uses the picture itself; Palette and Heat use its main colours.'},
+  {k:'trails', label:'Trails', opts:[['off','Off'],['short','Short'],['long','Long']]},
+  {k:'flash', label:'Beat flash', opts:[['off','Off'],['on','On']]},
+  {k:'shake', label:'Screen shake', opts:[['off','Off'],['on','On']]},
+  {k:'quality', label:'Quality', opts:[['auto','Auto (smoothest)'],['balanced','Balanced'],['high','High (up to 4K)']], hint:'Auto lowers the detail slightly when needed to keep the frame rate at your screen\'s refresh rate.'},
+];
+
+const toastEl = document.getElementById('toast');
+let toastTimer;
+function toast(msg, ms=6000){ toastEl.textContent = msg; toastEl.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(()=>toastEl.hidden=true, ms); }
+
+// ---------- WebGL ----------
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', {antialias:false, depth:false, stencil:false, premultipliedAlpha:false, powerPreference:'high-performance', desynchronized:true});
+if(!gl) toast("This browser can't run the visualizer (WebGL 2 is missing). Try a recent Chrome or Edge.", 60000);
+const floatOK = gl && !!gl.getExtension('EXT_color_buffer_float');
+
+const VS = `#version 300 es
+in vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }`;
+
+const COMMON = `#version 300 es
+precision highp float;
+#define TAU 6.2831853
+out vec4 o;
+float hash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p+45.32); return fract(p.x*p.y); }
+float noise(vec2 p){ vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.-2.*f);
+  return mix(mix(hash(i),hash(i+vec2(1,0)),u.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x), u.y); }
+float fbm(vec2 p){ float v=0., a=.5; for(int i=0;i<3;i++){ v+=a*noise(p); p=p*2.03+vec2(1.7,9.2); a*=.5; } return v; }
+float luma(vec3 c){ return dot(c, vec3(.299,.587,.114)); }
+vec3 hueRot(vec3 c, float a){ const vec3 k=vec3(0.57735); float ca=cos(a); return c*ca + cross(k,c)*sin(a) + k*dot(k,c)*(1.-ca); }
+`;
+
+const SCENE_FS = COMMON + `
+uniform sampler2D uTex, uSpec, uPeak, uWave, uTone, uToneS;
+uniform vec3 uPal0, uPal1, uPal2, uPal3;
+uniform vec2 uRes, uShake;
+// lows / mids / highs: smoothed level (1 ~ typical for this song), hits (0-1, transients), and their own clocks
+uniform float uBgT, uE;
+uniform float uLowA, uWaveK, uNStr, uCore, uKAge, uTravel, uSpeed, uSpin, uHyE; uniform float uStr[7]; uniform float uFlow[7]; uniform float uSHit[7]; uniform float uSAge[7]; uniform float uSWK[7]; uniform float uSGlow[7];
+uniform float uLow, uMid, uHigh, uLowHit, uMidHit, uHighHit, uLowT, uMidT, uHighT;
+// 10-band equaliser channels (31 Hz ... 16 kHz) + the .1 sub channel (index 10)
+uniform float uCh[11]; uniform float uChHit[11];
+uniform float uEnergy, uInt, uTime, uAssemble, uAggr;
+uniform float uMode, uBars, uLayout, uBassMid, uSeg, uColor, uPeakOn, uImgAsp;
+
+float tn(float x){ return texture(uTone, vec2(clamp(x,0.002,0.998),.5)).r*1.3; }
+float tnS(float x){ return texture(uToneS, vec2(clamp(x,0.002,0.998),.5)).r*1.3; }
+float sp(float x){ return texture(uSpec, vec2(clamp(x,0.004,0.996),.5)).r; }
+float pk(float x){ return texture(uPeak, vec2(clamp(x,0.004,0.996),.5)).r; }
+vec3 pal(float t){ t = clamp(t + uAggr*0.45, 0., 1.)*3.;
+  if(t < 1.) return mix(uPal0,uPal1,t); if(t < 2.) return mix(uPal1,uPal2,t-1.); return mix(uPal2,uPal3,t-2.); }
+vec3 tex(vec2 uv){ return texture(uTex, uv).rgb; }
+vec3 shade(vec2 uv, float t, float e){
+  vec3 p = pal(t);
+  vec3 tc = tex(uv); float lm = smoothstep(0.05, 0.3, luma(tc));
+  if(uColor < 0.5) return tc*lm*2.4 + p*0.15*lm*e;
+  if(uColor < 1.5) return p*(0.35+e*0.8);
+  if(uColor < 2.5) return p*lm*(0.6+e*1.2);
+  return hueRot(p, uMidT*0.5 + t*4.)*(0.45+e*0.9);
+}
+vec2 cover(vec2 q){ float a=uRes.x/uRes.y; float s=max(a/uImgAsp,1.); return vec2(q.x/(uImgAsp*s)+0.5, 0.5 - q.y/s); }
+float gapm(float w){ return smoothstep(0.06,0.16,w)*(1.-smoothstep(0.84,0.94,w)); }
+float height(float f){ return min(pow(f,0.9)*uInt*0.72, 1.); }
+mat2 rot(float a){ return mat2(cos(a),-sin(a),sin(a),cos(a)); }
+// position on the log spectrum axis (0-1, 30 Hz-16 kHz) -> channel 0-9, blended smoothly between neighbours
+float chPos(float fx){ float f = 30.*pow(533.333, clamp(fx,0.,1.)); return clamp(log2(f/22.) - 0.5, 0., 9.); }
+float chMix(float b, bool hitv){ int i = int(floor(b)); int j = min(i+1, 9); float t = smoothstep(0.,1.,fract(b));
+  return hitv ? mix(uChHit[i], uChHit[j], t) : mix(uCh[i], uCh[j], t); }
+float chL(float fx){ return chMix(chPos(fx), false); }
+float chH(float fx){ return chMix(chPos(fx), true); }
+
+vec3 barShade(float y, float h, float pv, float g, float ft, vec2 tuv, float glint){
+  vec3 col = vec3(0.);
+  float inside = g*step(0.,y)*step(y,h);
+  if(uSeg > 0.5) inside *= step(0.3, fract(y*26.));
+  vec3 c = shade(tuv, ft, h)*(0.4 + 1.2*clamp(y/max(h,0.02),0.,1.));
+  col += inside*c;
+  float cap = g*(1.-smoothstep(0.,0.016,abs(y-h)))*step(0.015,h);
+  col += cap*mix(c,vec3(1.),0.55)*(1. + glint*2.5);          // highs make the caps glint
+  if(uPeakOn > 0.5) col += g*(1.-smoothstep(0.,0.012,abs(y-pv-0.025)))*step(0.03,pv)*pal(ft)*1.7;
+  col += g*step(h,y)*exp(-(y-h)*14.)*c*0.3;
+  return col;
+}
+
+void main(){
+  vec2 q = (gl_FragCoord.xy - uRes*0.5)/uRes.y + uShake;
+  float a = uRes.x/uRes.y;
+  vec3 col = vec3(0.);
+  float x01 = q.x/a + 0.5;
+  float lvl = uLow*0.5 + uMid*0.3 + uHigh*0.2;
+
+  if(uMode < 0.5){ // SPECTRUM BARS  lows: punch · mids: texture flow · highs: cap glints
+    float n = uBars, fi = floor(x01*n), xc = (fi+.5)/n, w = fract(x01*n);
+    float fx = uBassMid > 0.5 ? abs(xc-.5)*2. : xc;
+    float g = gapm(w)*step(0.,x01)*step(x01,1.);
+    float punch = 1. + uLowHit*0.18*uInt;
+    float hb = chH(fx);
+    float h = min(height(sp(fx))*punch*(1. + hb*0.3*uInt), 1.), pv = height(pk(fx));
+    float y, refl = 0.;
+    if(uLayout < 0.5){ y = (q.y+0.4)/0.86; if(y < 0.){ refl = 1.; y = -y*3.; } }
+    else if(uLayout < 1.5){ y = abs(q.y)/0.47; }
+    else { y = (0.4-q.y)/0.86; if(y < 0.){ refl = 1.; y = -y*3.; } }
+    float glint = max(uHighHit*step(0.55, hash(vec2(fi, floor(uHighT*6.)))), hb);
+    col = barShade(y, h, pv, g, fx, vec2(xc*0.9+0.05, 1.-y*0.85 + uMidT*0.25), glint);
+    if(refl > 0.5) col *= 0.2*(1.-smoothstep(0.,1.,y));
+  }
+  else if(uMode < 1.5){ // RADIAL  lows: core size + shockwave · mids: rotation · highs: sparks
+    float r = length(q), ang = atan(q.y,q.x);
+    float a01 = fract(ang/TAU + 0.25 + uMidT*0.04);
+    float n = uBars*2., fi = floor(a01*n), ac = (fi+.5)/n, w = fract(a01*n);
+    float fs = abs(ac*2.-1.); if(uBassMid > 0.5) fs = 1.-fs;
+    float g = gapm(w);
+    // SOLID RING = the beat: jumps out on each kick, then keeps shrinking (nothing else moves it)
+    // FRAGMENTED RING = the spectrum: segments on a fixed base circle, each one's length = its frequency
+    float R0 = 0.07 + uCore*0.12;
+    float Rb = 0.215;                                                   // fixed base of the fragments (doesn't pump with the kick)
+    float hb = chH(fs);
+    float h = min(height(sp(fs))*(1. + hb*0.3*uInt), 1.), pv = height(pk(fs));
+    float y = (r-Rb)/0.33;
+    col = barShade(y, h, pv, g, fs, vec2(ac, 1.-y + uMidT*0.2), max(uHighHit*step(0.6, hash(vec2(fi, floor(uHighT*6.)))), hb));
+    if(uLayout > 0.5) col += barShade((Rb-r)/0.1, h, pv, g, fs, vec2(ac, y), 0.)*0.6*step(R0 + 0.01, r);
+    float rn = r/max(R0,0.01);
+    vec2 cuv = vec2(a01*2. + rn*0.7, rn*0.45 - uMidT*0.15);
+    col += max(shade(cuv, rn, lvl), pal(rn)*0.12*uCore)*(uCore*1.2)*(1.-smoothstep(R0-0.012,R0,r));
+    float ringW = 0.004 + uCore*0.006;                                  // the solid ring itself: a clear, unbroken circle
+    col += pal(0.)*(1. - smoothstep(ringW*0.5, ringW, abs(r-R0)))*(0.15 + uCore*1.6);
+    col += pal(0.)*exp(-abs(r-R0)*70.)*uCore*0.6;
+    float sw = R0 + (1.-uLowHit)*0.7;                                     // shockwave on every kick
+    col += pal(0.2)*exp(-abs(r-sw)*60.)*uLowHit*uLowHit*0.9*min(1., uCore*1.5);   // shockwave only with a real kick
+    float bin = floor(fract(ang/TAU)*180.), h1 = hash(vec2(bin,3.1));
+    float pr = R0 + fract(h1*5. + uHighT*(0.25+h1*0.4))*0.8;
+    col += step(0.45,h1)*(1.-smoothstep(0.,0.008,abs(r-pr)))*(1.-smoothstep(0.1,0.4,abs(fract(fract(ang/TAU)*180.)-0.5)))*pal(h1)*(uHigh*2.2 + uHighHit*1.5);
+  }
+  else if(uMode < 2.5){ // WAVE  ten sections, one per channel: 31 Hz on the left ... 16 kHz on the right; .1 sub lifts the whole line
+    // BACKGROUND (the strings are untouched): living smoke whose amount, drift, colour and shadows follow the energy.
+    // Calm: a faint, slow, cool haze. Rising energy: thicker smoke that drifts faster, warms in hue and casts deeper
+    // moving shadows; each kick puffs it a little.
+    float E = uEnergy;
+    float smoke = 0.16 + 1.3*E*E + uCore*0.3*E;
+    vec2 wv = vec2(fbm(q*1.6 + vec2(uBgT*0.5, 0.)), fbm(q*1.6 + vec2(4., uBgT*0.37))) - 0.5;
+    vec2 wv2 = vec2(fbm(q*0.8 - vec2(uBgT*0.23, 1.3)), fbm(q*0.8 + vec2(2.1, -uBgT*0.19))) - 0.5;   // a slower, deeper layer
+    vec3 sm = textureLod(uTex, cover(q*0.6 + wv*(0.8 + E*0.6)), 5.).rgb;
+    vec3 sm2 = textureLod(uTex, cover(q*0.35 + wv2*(0.6 + E*0.5) + 0.3), 6.).rgb;
+    vec3 bg = sm*smoothstep(0.02, 0.12, luma(sm))*0.7 + sm2*smoothstep(0.02, 0.12, luma(sm2))*0.35*(0.4 + E);
+    bg = hueRot(bg, sin(uBgT*0.11)*0.22 + E*0.3);                                // hue drifts, and shifts as energy rises
+    float sh = smoothstep(0.42, 0.72, fbm(q*1.2 + vec2(-uBgT*0.3, uBgT*0.12)));  // moving shadows
+    bg *= 1. - sh*(0.25 + 0.55*E);
+    col += bg*smoke;
+    float X = q.x;
+    float xe = clamp((x01 - 0.06)/0.88, 0., 1.);
+    float bp = clamp(xe*10. - 0.5, 0., 9.);                       // channel under this point
+    float cl = chMix(bp, false), chh = chMix(bp, true);
+    float env = 1. - smoothstep(0.42, 0.5, abs(x01-0.5));
+    // 1, 3, 5 or 7 strings; together they cover 20 Hz-20 kHz, each string its own slice (lowest at the bottom string).
+    //  - each string's height comes from its own slice; the mids make them flow, each at its own pace;
+    //    the highs shorten the wavelength (low strings long waves, high strings tight ones)
+    //  - waves start at the RIGHT edge and travel left; a steady sound freezes a string into a standing wave
+    //  - every tone in a string's slice shapes that string along its length
+    //  - BEAT: every hit in a string's slice punches it and sends a pulse running from the right along it
+    float Xr = (0.5 - x01)*uRes.x/uRes.y;                          // distance from the right edge
+    float envR = smoothstep(0., 0.05, 1. - x01)*(1. - smoothstep(0.9, 1., 1. - x01));
+    float capE = 0.10 + 0.26*uEnergy*uEnergy;
+    float n = uNStr;
+    for(int k=0;k<7;k++){
+      float fk = float(k);
+      if(fk >= n) break;
+      float fr = n > 1.5 ? fk/(n - 1.) : 0.5;                       // 0 = lowest string, 1 = highest
+      float hit = uSHit[k], age = uSAge[k];
+      float kick = k == 0 ? uCore : 0.;                              // the kick drum lives in the lowest slice: only that string takes it
+      float amp = 0.85*min(min(uStr[k]*(0.06 + 0.14*uEnergy), capE)*(1. - 0.3*fr)*(1. + 0.7*hit + 0.6*kick), 0.34);   // never off the screen (overall 15% lower)
+      float s0 = max(0., (fk - 0.075)/n), s1 = min(1., (fk + 1.075)/n);   // its part of the spectrum (overlaps a little)
+      float tp = s0 + (1. - x01)*(s1 - s0);                        // low end of its part at the right
+      float tl = tnS(tp);
+      float w = uSWK[k];                                            // its own wavelength (only its own frequencies change it)
+      float flow = uFlow[k];
+      float y = sin(Xr*w - flow + fk*2.1)*0.7 + sin(Xr*w*0.43 - flow*0.6 + fk*1.3)*0.3;
+      y *= 0.3 + 0.95*tl;
+      y += sin(Xr*(18. + fr*28.) - flow*1.7 + fk)*tl*0.22;
+      y *= amp*envR;
+      // every tone as its own peak: a note that stands out from its neighbours lifts the string right at its frequency.
+      // Added on top (not multiplied by the wave), so a note can't vanish where the wave happens to cross the middle.
+      float dl = 2.5/256.;
+      float tc = max(0., tl - 0.5*(tnS(tp - dl) + tnS(tp + dl)));
+      y += (tc*1.5 + tl*0.25)*(0.03 + 0.05*uEnergy)*(1. + 0.7*fr)*envR;
+      float calm = 0.15 + 0.85*smoothstep(0.1, 0.75, uE);          // low energy: the body of the strings calms down a lot
+      y *= calm;
+      // ...but a single hit in a calm moment still shows clearly, even MORE when the string is resting:
+      // every drum hit in its part throws the whole string and sends a pulse in from the right
+      float boost = 1. + 1.6*(1. - calm);
+      float pd = (Xr - age*2.2)/0.09;                               // the beat pulse, running in from the right
+      float pulse = hit*exp(-pd*pd)*(0.05 + 0.06*uEnergy)*boost*envR;
+      y += pulse*(mod(fk, 2.) < 0.5 ? 1. : -1.);
+      y += hit*(sin(Xr*w*1.3 - flow*1.4 + fk)*0.7 + sin(Xr*w*2.7 - flow + fk*0.7)*0.3)*(0.025 + 0.03*uEnergy)*boost*envR;
+      float kd = (Xr - uKAge*2.6)/0.14;                             // the kick drum's own wave, rolling in from the right
+      y -= kick*exp(-kd*kd)*(0.05 + 0.08*uEnergy)*(0.6 + 0.4*boost)*envR;
+      y += (fk - (n - 1.)*0.5)*0.012*min(1., 3./n);                 // strings sit just apart
+      float d = abs(q.y - y);
+      float thick = 0.0013 + tl*0.0022 + hit*0.0022 + tc*0.002;
+      vec3 c = mix(pal(0.08 + 0.84*fr), vec3(1.), clamp(tl*0.4 + hit*0.35, 0., 0.7));
+      col += c*(thick/(d+0.0022))*0.34*(uSGlow[k] + tl*0.5)*envR;        // glow: its own loudness and hits, lifted by the song's energy
+    }
+  }
+  else if(uMode < 3.5){ // TUNNEL  lows: forward travel + ring pulses · mids: twist · highs: shimmer stripes
+    float r = length(q), ang = atan(q.y,q.x);
+    float depth = 0.3/(r+0.015);
+    ang += uMidT*0.12 + sin(depth*0.4 + uMidT*0.5)*uMid*0.25;
+    vec2 tu = vec2(ang/TAU*2., depth*0.3 + uLowT*0.6);
+    vec3 c = shade(tu, fract(depth*0.08), lvl)*(uLow*0.6 + uMid*0.4);
+    float ringf = fract(depth*0.6 + uLowT*0.9);
+    c += pal(fract(depth*0.05))*(1.-smoothstep(0.,0.06,abs(ringf-0.5)))*(sp(fract(depth*0.05))*uInt*1.4 + chH(fract(depth*0.05))*1.4 + uChHit[10]*0.6);
+    float stripes = pow(abs(sin(ang*24. + uHighT*0.6)), 40.);
+    c += pal(0.9)*stripes*(uHigh*0.5 + uHighHit*0.6)*smoothstep(0.1,0.5,r);
+    col = c*smoothstep(0.05,0.35,r)*uInt*0.9;
+  }
+  else if(uMode < 4.5){ // KALEIDOSCOPE  lows: zoom pulse · mids: spin · highs: glitter
+    vec2 p = rot(uMidT*0.25)*q*(1.15 - uLowHit*0.08*uInt - uLow*0.05);
+    float r = length(p), an = atan(p.y,p.x), N = 8., sg = TAU/N;
+    an = mod(an, sg); an = abs(an - sg*0.5);
+    vec2 fp = r*vec2(cos(an), sin(an));
+    vec2 uv = fp*0.8 + vec2(0.3 + uMidT*0.03, 0.35);
+    col = shade(uv, fract(r*1.2), lvl)*(uLow*0.55 + uMid*0.45)*uInt*0.9;
+    float rr = 0.22 + height(sp(an/sg*2.))*0.25 + chH(an/sg*2.)*0.06;
+    col += pal(fract(r*1.5))*(1.-smoothstep(0.,0.012,abs(r-rr)))*1.3*sp(an/sg*2.);
+    float gl = step(0.985, hash(floor(fp*90.) + floor(uHighT*6.)));
+    col += vec3(1.)*gl*(uHigh*1.2 + uHighHit)*smoothstep(0.03,0.2,luma(col));
+  }
+  else if(uMode < 5.5){ // SHATTER (unchanged behaviour)
+    float uKick = uLowHit, uLevel = lvl;
+    float sc = clamp(1. - uAssemble + uKick*0.3*(1.-uAssemble), 0., 1.);
+    vec2 grid = vec2(30.,17.);
+    vec2 p0 = cover(q);
+    vec2 pw = p0 + (vec2(noise(p0*4.+uTime*0.15), noise(p0*4.+7.-uTime*0.15))-0.5)*0.05*sc;
+    vec2 cell = floor(pw*grid), lf = fract(pw*grid);
+    float tri0 = step(lf.x, lf.y);
+    vec2 id = cell*2. + vec2(tri0, 0.);
+    vec2 h = vec2(hash(id), hash(id+17.3));
+    float h3 = hash(id+5.1);
+    float spd = 0.25 + h.x*0.9;
+    vec2 drift = vec2(noise(id*0.37 + uTime*spd), noise(id*0.53 + 11. - uTime*spd)) - 0.5;
+    float shrink = 1. - sc*(0.25 + 0.55*h3);
+    float sa = ((h.y-0.5)*6.2832 + (noise(id*0.71 + uTime*(0.2+h3*0.8))-0.5)*3.)*sc;
+    vec2 lfs = rot(sa)*((lf - 0.5 - drift*sc*0.6)/shrink) + 0.5;
+    float tri = step(lfs.x, lfs.y);
+    float inside = step(0.,lfs.x)*step(lfs.x,1.)*step(0.,lfs.y)*step(lfs.y,1.)*(1.-abs(tri-tri0));
+    vec2 srcCell = cell + floor((h-0.5)*grid*sc + drift*grid*0.35*sc + 0.5);
+    float ang = (h3-0.5)*6.2832*sc + (noise(id + uTime*(0.3+h.y*1.2))-0.5)*4.*sc;
+    vec2 l = rot(ang)*(lfs-0.5);
+    float alive = step(h3, 1. - sc*0.55);
+    vec2 suv = (srcCell + l + 0.5)/grid;
+    float edge = min(min(lfs.x, 1.-lfs.x), min(lfs.y, 1.-lfs.y));
+    edge = min(edge, abs(lfs.x-lfs.y)*0.7);
+    vec3 c = shade(suv, clamp(luma(tex(suv))*3.,0.,1.), uLevel)*(0.6 + uLevel*0.5*uInt + uAssemble*0.6);
+    c += c*(1.-smoothstep(0.,0.05,edge))*sc*uHigh*1.5;
+    col = c*inside*alive;
+  }
+  else if(uMode < 6.5){ // RISING SPARKS  each column rises on its own band's clock · lows: horizon flash
+    vec2 uv = cover(q - vec2(sin(q.y*6.+uMidT)*0.02*uLow*uInt, uMidT*0.05));
+    col = textureLod(uTex, uv*0.7 + 0.15, 5.).rgb*uMid*0.4;
+    float y01 = q.y + 0.5, hz = 0.12;
+    for(int L=0; L<3; L++){
+      float fL = float(L), cols = 50. + fL*35.;
+      float id = floor(x01*cols), fx = fract(x01*cols);
+      float hh = hash(vec2(id, fL+2.));
+      float fq = (id+.5)/cols; if(uBassMid > 0.5) fq = abs(fq*2.-1.);
+      float f = height(sp(fq));
+      float tc = fq < 0.33 ? uLowT : (fq < 0.66 ? uMidT : uHighT);
+      float yy = fract(y01*(0.8+fL*0.5) - tc*(0.5+hh*0.6)*(1.+fL*0.3) + hh*13.);
+      float trail = smoothstep(0.3-f*0.25, 0.75, yy)*(1.-smoothstep(0.75, 0.77, yy));
+      float wm = 1. - smoothstep(0.05, 0.35+f*0.1, abs(fx-0.5));
+      float cb = chH(fq);
+      float amp = smoothstep(0.06, 0.45, f)*step(0.35, hh + f*0.5)*(1. + cb*1.5);
+      float top = hz + 0.12 + f*0.62;
+      amp *= smoothstep(hz-0.02, hz+0.04, y01)*(1.-smoothstep(top-0.12, top, y01));
+      col += max(shade(vec2(fq, 1.-y01 + uMidT*0.1), fq, f), pal(fq)*(0.35+f*0.6))*trail*wm*amp*(1.3-fL*0.3);
+    }
+    col += pal(x01)*exp(-abs(y01-hz)*40.)*(sp(x01)*uInt*0.35 + chH(clamp(x01,0.,1.))*0.9 + uChHit[10]*0.4);
+  }
+  else if(uMode < 7.5){ // WARP  lows: ring size + trail zoom · mids: rotation · highs: ripple + glints
+    float r = length(q), ang = atan(q.y,q.x), a01 = fract(ang/TAU + 0.25 + uMidT*0.05);
+    float fs = abs(a01*2.-1.); if(uBassMid > 0.5) fs = 1.-fs;
+    float R = 0.15 + height(sp(fs))*0.17 + uCh[10]*0.04 + uChHit[10]*0.03 + chH(fs)*0.05;
+    R += sin(ang*12. + uHighT*2.)*0.006*uHigh;
+    float d = abs(r-R);
+    vec3 c = max(shade(vec2(a01, uMidT*0.1), fs, lvl), pal(fs)*0.55);
+    col += c*(0.0014/(d+0.0016))*(uLow*0.7 + uMid*0.4);
+    for(int i=0;i<3;i++){
+      float fi = float(i);
+      vec2 bp = 0.32*vec2(sin(uMidT*0.5+fi*2.1), cos(uMidT*0.4+fi*1.7));
+      col += pal(fi/2.)*0.003/(length(q-bp)+0.012)*uLowHit;
+    }
+  }
+  else if(uMode < 8.5){ // FRACTAL  lows: breathing fold · mids: rotation · highs: fine-detail sparkle
+    vec2 p = rot(uMidT*0.1)*q*(1.5 - uLow*0.15*uInt);
+    float k = 0.8 + 0.07*sin(uMidT*0.2) + uLowHit*0.02*uInt;
+    vec3 acc = vec3(0.); float w = 0.;
+    for(int i=0;i<7;i++){
+      p = abs(p)/max(dot(p,p), 0.02) - k;
+      float fi = float(i), wt = exp(-fi*0.3)*(1. + uChHit[min(9, 1 + int(fi*1.4))]*1.6)*(i > 3 ? 1. + uHigh*1.2 : 1.);
+      acc += max(shade(fract(p*0.22+0.5), fi/6., lvl), pal(fi/6.)*0.16*lvl)*wt; w += wt;
+    }
+    col = acc/w;
+    col *= smoothstep(0.04, 0.4, luma(col))*(uLow*0.6 + uMid*0.5 + uHigh*0.3)*1.2*uInt;
+  }
+  else { // LIGHT SPEED  your own ship: starts at rest, speeds up with the song, eases off when it calms
+         // the kick drum surges it forward and lights the wormhole · each star belongs to a frequency
+    vec2 cq = q - vec2(sin(uSpin*0.7), cos(uSpin*0.5))*0.03;
+    float r = length(cq), ang = atan(cq.y,cq.x) + uSpin*0.15;
+    vec2 wuv = vec2(ang/TAU*2. + uSpin*0.1, 0.08/(r+0.05) + uTravel*0.15);   // x2 keeps the mirrored texture seamless all the way round
+    vec3 core = textureLod(uTex, wuv, 3.).rgb*2.2 + pal(0.2)*0.12;
+    col += core*exp(-r*5.)*(0.12 + uHyE*0.55 + uCore*0.6*uHyE);
+    for(int L=0; L<4; L++){
+      float fL = float(L), N = 70. + fL*55.;
+      float a01 = fract(ang/TAU + fL*0.137);
+      float cid = floor(a01*N);
+      float h = hash(vec2(cid, fL*7.1)), h2 = hash(vec2(cid+13., fL));
+      float z = fract(h + uTravel*(0.12 + h2*0.1)*(1. + fL*0.3));        // 0 = far away, 1 = flying past
+      float rs = z*z*1.25;
+      float len = 0.005 + uSpeed*0.11*z*z;                                // dots when parked, long streaks at full speed
+      float da = abs(fract(a01*N) - 0.5 - (h2-0.5)*0.6)/N*TAU*r;
+      float wd = 0.0012 + z*0.0025;
+      float radial = smoothstep(rs - len, rs, r)*(1. - smoothstep(rs, rs + 0.004, r));
+      float star = radial*(1. - smoothstep(0., wd, da));
+      float fx = fract(h*3.7);
+      float bright = (0.25 + z*1.4)*(0.25 + uHyE*0.8 + tn(fx)*1.1*uHyE);
+      col += mix(pal(fx), vec3(1.), 0.35 + z*0.3)*star*bright*step(0.3, h2 + uHigh*0.35);
+    }
+    col += pal(0.8)*smoothstep(0.35, 1., r)*uSpeed*0.035;
+  }
+  if(uMode < 4.5 || uMode > 5.5) col *= smoothstep(0.02, 0.15, uMode > 8.5 ? max(uHyE, uEnergy*0.5) : uEnergy);
+  o = vec4(col, 1.);
+}`;
+
+const SOURCE_FS = COMMON + `
+uniform sampler2D uSpec;
+uniform vec2 uRes;
+uniform float uTime, uPhase, uBass, uHigh, uLevel, uKick, uGen;
+void main(){
+  vec2 frag = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
+  vec2 q = (frag-uRes*0.5)/min(uRes.x,uRes.y);
+  float t = uTime;
+  vec3 col = vec3(0.);
+  float xs = uRes.x/min(uRes.x,uRes.y);
+  float xn = clamp(q.x/xs + 0.5, 0., 1.);
+  float sp = texture(uSpec, vec2(xn, 0.5)).r;
+  if(uGen < 1.5){ // Ember Line
+    for(int i=0;i<3;i++){
+      float fi = float(i);
+      float y = (fbm(vec2(q.x*1.4 + uPhase*0.08 + fi*3.1, fi*2.))-0.5)*0.55
+              + sp*0.22*sin(q.x*7. + t*1.7 + fi*2.)*(1.-fi*0.3) - 0.05;
+      float dd = abs(-q.y - y + fi*0.035);
+      float g = 0.0014/(dd+0.0018)*(uLevel*1.2 + uKick*0.6)*(1.-fi*0.3);
+      vec3 c = (i==2) ? vec3(0.18,0.32,1.0) : mix(vec3(1.,0.48,0.14), vec3(1.,0.3,0.08), fi);
+      col += c*g*0.55;
+    }
+    col *= 1.-smoothstep(0.25, 0.95, abs(q.x/xs)*2.);
+  } else if(uGen < 2.5){ // Ink Smoke
+    vec2 p = q*1.7 + vec2(0.4,0.);
+    float tt = uPhase*0.05;
+    vec2 w = vec2(fbm(p+tt), fbm(p+vec2(3.1,1.7)-tt));
+    float f = fbm(p + w*2.2 + vec2(tt*0.5,-tt));
+    float v = pow(clamp((f-0.46)*3.2, 0., 1.), 2.2);
+    v *= uLevel*0.5 + uBass*0.9 + uKick*0.4;
+    v *= smoothstep(-0.9, 0.3, q.x);
+    col = mix(vec3(0.12,0.26,0.5), vec3(0.82,0.9,1.0), clamp(v,0.,1.))*v;
+  } else { // Halo
+    vec2 cc = q - vec2(0.12, 0.);
+    float r = length(cc), a = atan(cc.y, cc.x);
+    float Rr = 0.32 + uBass*0.03 + uKick*0.02;
+    float n = noise(vec2(a*3. + 10., t*0.4 + uPhase*0.05));
+    float ring = 0.0016/(abs(r-Rr)+0.002)*(0.35+n)*uLevel*1.2;
+    float side = 0.5 + 0.5*cos(a - 2.3);
+    col = mix(vec3(0.08,0.55,0.75), vec3(1.0,0.3,0.12), side)*ring*0.6;
+    vec2 cell = floor(frag/3.);
+    float h = hash(cell);
+    float near = exp(-pow((r-Rr-0.03)/0.05, 2.));
+    col += vec3(0.9)*step(0.992, h)*near*(0.3+uHigh*2.)*noise(cell*0.3+t*5.);
+  }
+  o = vec4(clamp(col, 0., 1.), 1.);
+}`;
+
+const COMPOSE_FS = COMMON + `
+uniform sampler2D uScene, uPrev;
+uniform vec2 uRes, uShift;
+uniform float uZoom, uRot, uDecay, uAberr, uFlash;
+uniform vec3 uFlashCol;
+uniform float uRed, uWarp, uHue, uTime, uAggr;
+void main(){
+  vec2 uv = gl_FragCoord.xy/uRes, c = uv-.5;
+  float a = uRes.x/uRes.y;
+  vec3 s = vec3(texture(uScene, uv - c*uAberr).r, texture(uScene, uv).g, texture(uScene, uv + c*uAberr).b);
+  s = max(hueRot(s, uAggr*uAggr*0.9), 0.)*(1. + uAggr*0.25);
+  float sl = luma(s); s = max(mix(vec3(sl), s, 1. + uAggr*0.35), 0.);
+  vec2 pc = c*vec2(a,1.);
+  float cr = cos(uRot), sr = sin(uRot);
+  pc = mat2(cr,-sr,sr,cr)*pc/uZoom;
+  pc += uWarp*0.004*vec2(sin(pc.y*5.+uTime*0.3), sin(pc.x*5.-uTime*0.25));
+  pc.x /= a;
+  vec2 puv = pc + .5 - uShift;
+  float inb = step(0.,puv.x)*step(puv.x,1.)*step(0.,puv.y)*step(puv.y,1.);
+  vec3 pv = hueRot(texture(uPrev, puv).rgb, uHue)*uDecay*inb;
+  vec3 col = max(s, pv) + uFlashCol*uFlash;
+  col = mix(col, vec3(1.,0.06,0.02)*luma(col)*2.4, uRed*0.8);
+  o = vec4(col, 1.);
+}`;
+
+const DISPLAY_FS = COMMON + `
+uniform sampler2D uSrc; uniform vec2 uRes; uniform float uBloom, uExpo;
+void main(){
+  vec2 uv = gl_FragCoord.xy/uRes;
+  vec3 c = texture(uSrc, uv).rgb;
+  c += (textureLod(uSrc, uv, 3.).rgb*0.45 + textureLod(uSrc, uv, 5.).rgb*0.6)*uBloom;
+  c = max(c - 0.025, 0.)*1.03;
+  vec3 ex = max(c-0.85, 0.); c = min(c, 0.85) + ex/(1.+ex*1.8);
+  c *= 1. - 0.5*pow(length(uv-.5)*1.3, 2.);
+  c *= uExpo;                                                      // total light follows the energy of the song
+  o = vec4(c, 1.);
+}`;
+
+function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){ console.error(gl.getShaderInfoLog(s)); toast("Shader error: " + gl.getShaderInfoLog(s), 60000); } return s; }
+function program(fs, names){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VS)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.bindAttribLocation(p, 0, 'p'); gl.linkProgram(p);
+  const u = {}; names.forEach(n => u[n] = gl.getUniformLocation(p, n));
+  return {p, u};
+}
+let PS, PC, PD, PG;
+let genTarget = null;
+const GEN_W = 1920, GEN_H = 1080;
+const SPEC_N = 128, WAVE_N = 256, TONE_N = 256;
+let toneAn = null, toneFreq = null;
+const TONE = {db:new Float32Array(TONE_N).fill(-200), fl:new Float32Array(TONE_N).fill(-100), v:new Float32Array(TONE_N), vs:new Float32Array(TONE_N), pkB:new Float32Array(TONE_N).fill(-90), flS:new Float32Array(TONE_N).fill(-100)};
+const toneBytes = new Uint8Array(TONE_N), toneSBytes = new Uint8Array(TONE_N);
+const specBytes = new Uint8Array(SPEC_N), peakBytes = new Uint8Array(SPEC_N), waveBytes = new Uint8Array(WAVE_N).fill(128);
+let specTex, peakTex, waveTex, toneTex, toneSTex, blackTex;
+function dataTex(n, data){ const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, n, 1, 0, gl.RED, gl.UNSIGNED_BYTE, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+if(gl){
+  PS = program(SCENE_FS, ['uTex','uSpec','uPeak','uWave','uPal0','uPal1','uPal2','uPal3','uRes','uShake','uTime','uMid','uHigh','uMode','uBars','uLayout','uBassMid','uSeg','uColor','uInt','uPeakOn','uImgAsp','uAssemble','uLow','uLowHit','uMidHit','uHighHit','uLowT','uMidT','uHighT','uEnergy','uAggr','uCh','uChHit','uTone','uLowA','uWaveK','uStr','uFlow','uNStr','uSHit','uSAge','uCore','uKAge','uTravel','uSpeed','uSpin','uHyE','uToneS','uSWK','uSGlow','uBgT','uE']);
+  PC = program(COMPOSE_FS, ['uScene','uPrev','uRes','uShift','uZoom','uRot','uDecay','uAberr','uFlash','uFlashCol','uRed','uWarp','uHue','uTime','uAggr']);
+  PD = program(DISPLAY_FS, ['uSrc','uRes','uBloom','uExpo']);
+  PG = program(SOURCE_FS, ['uSpec','uRes','uTime','uPhase','uBass','uHigh','uLevel','uKick','uGen']);
+  gl.useProgram(PG.p); gl.uniform1i(PG.u.uSpec, 1);
+  gl.useProgram(PS.p); gl.uniform1i(PS.u.uTex,0); gl.uniform1i(PS.u.uSpec,1); gl.uniform1i(PS.u.uPeak,2); gl.uniform1i(PS.u.uWave,3); gl.uniform1i(PS.u.uTone,4); gl.uniform1i(PS.u.uToneS,5);
+  gl.useProgram(PC.p); gl.uniform1i(PC.u.uScene,0); gl.uniform1i(PC.u.uPrev,1);
+  gl.useProgram(PD.p); gl.uniform1i(PD.u.uSrc,0);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  specTex = dataTex(SPEC_N, specBytes); peakTex = dataTex(SPEC_N, peakBytes); waveTex = dataTex(WAVE_N, waveBytes); toneTex = dataTex(TONE_N, toneBytes); toneSTex = dataTex(TONE_N, toneSBytes);
+  blackTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, blackTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0,0,0,255]));
+}
+
+// render targets
+let targets = null;
+function makeTarget(w, h, mips){
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  if(floatOK) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mips ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  if(mips) gl.generateMipmap(gl.TEXTURE_2D);
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return {t, f};
+}
+function ensureTargets(w, h){
+  if(targets && targets.w === w && targets.h === h) return;
+  if(targets) [targets.scene, ...targets.acc].forEach(x => { gl.deleteTexture(x.t); gl.deleteFramebuffer(x.f); });
+  targets = {w, h, scene: makeTarget(w,h,false), acc:[makeTarget(w,h,true), makeTarget(w,h,true)], i:0};
+}
+
+const texCache = new Map();
+function loadTexture(pic){
+  if(texCache.has(pic.id)) return Promise.resolve(texCache.get(pic.id));
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
+      const entry = {tex, w:img.naturalWidth, h:img.naturalHeight};
+      texCache.set(pic.id, entry);
+      if(texCache.size > 4){ const k = texCache.keys().next().value; if(k !== pic.id){ gl.deleteTexture(texCache.get(k).tex); texCache.delete(k); } }
+      res(entry);
+    };
+    img.onerror = rej; img.src = pic.src;
+  });
+}
+
+// ---------- Pictures & styles ----------
+let picIndex = 0, current = null;
+try { const st = JSON.parse(localStorage.getItem('nocturne10') || '{}'); if(Number.isInteger(st.p) && st.p < PICS.length) picIndex = st.p; } catch(e){}
+function styleOf(pic){ const s1 = styleByPic[pic.id]; return (s1 && STYLES.some(x => x.id === s1)) ? s1 : pic.styles[0]; }
+
+const stylesEl = document.getElementById('styles');
+function renderStyles(){
+  stylesEl.querySelectorAll('button').forEach(b => b.remove());
+  const pic = PICS[picIndex], cur = styleOf(pic);
+  STYLES.forEach((st, i) => {
+    const b = document.createElement('button');
+    b.textContent = st.name;
+    b.className = (st.id === cur ? 'on ' : '') + (pic.styles.includes(st.id) ? 'rec' : '');
+    b.title = pic.styles.includes(st.id) ? 'Suggested for this picture' : '';
+    b.onclick = () => { styleByPic[pic.id] = st.id; save(); renderStyles(); updateHud(); };
+    stylesEl.appendChild(b);
+  });
+  const se = document.getElementById('strs'); se.hidden = cur !== 'wave';
+  se.querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.n === (+S.strings || 3)));
+}
+function updateHud(){
+  const pic = PICS[picIndex];
+  document.getElementById('num').textContent = String(picIndex+1).padStart(2,'0') + ' / ' + String(PICS.length).padStart(2,'0') + (pic.gen ? '  ·  ORIGINAL' : '');
+  document.getElementById('pname').textContent = pic.name;
+  document.getElementById('oname').textContent = STYLES.find(s => s.id === styleOf(pic)).name;
+}
+async function selectPic(i){
+  picIndex = (i + PICS.length) % PICS.length;
+  save(); renderStyles(); updateHud(); renderGrid();
+  const pic = PICS[picIndex];
+  if(pic.gen){
+    if(!genTarget){
+      genTarget = makeTarget(GEN_W, GEN_H, true);
+      gl.bindTexture(gl.TEXTURE_2D, genTarget.t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
+    }
+    current = {pic, tex:genTarget.t, w:GEN_W, h:GEN_H}; return;
+  }
+  try { const e = await loadTexture(pic); if(PICS[picIndex] === pic) current = {pic, ...e}; }
+  catch(err){ toast("Couldn't load this picture."); }
+}
+const grid = document.getElementById('grid');
+function renderGrid(){
+  grid.innerHTML = '';
+  PICS.forEach((p,i) => {
+    const b = document.createElement('button'); b.className = i===picIndex ? 'on' : '';
+    const im = document.createElement('img'); im.src = p.thumb; im.alt = '';
+    const sp = document.createElement('span'); sp.textContent = (p.gen ? 'Original · ' : '') + p.name;
+    b.append(im, sp); b.onclick = () => { document.getElementById('picsheet').hidden = true; selectPic(i); };
+    grid.appendChild(b);
+  });
+}
+const picsheet = document.getElementById('picsheet'), setsheet = document.getElementById('setsheet');
+document.getElementById('pics').onclick = () => { setsheet.hidden = true; picsheet.hidden = !picsheet.hidden; };
+document.getElementById('setbtn').onclick = () => { picsheet.hidden = true; setsheet.hidden = !setsheet.hidden; };
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => document.getElementById(b.dataset.close).hidden = true);
+document.getElementById('prev').onclick = () => selectPic(picIndex-1);
+document.getElementById('next').onclick = () => selectPic(picIndex+1);
+
+// settings sheet
+const rowsEl = document.getElementById('rows');
+function renderSettings(){
+  rowsEl.innerHTML = '';
+  SETTINGS.forEach(def => {
+    const row = document.createElement('div'); row.className = 'row';
+    const lab = document.createElement('div'); lab.className = 'label'; lab.textContent = def.label;
+    row.appendChild(lab);
+    if(def.type === 'range'){
+      const wrap = document.createElement('div'); wrap.className = 'group';
+      const inp = document.createElement('input'); inp.type = 'range'; inp.id = 'set-' + def.k;
+      inp.min = def.min; inp.max = def.max; inp.step = def.step; inp.value = S[def.k];
+      const val = document.createElement('span'); val.className = 'val'; val.textContent = Number(S[def.k]).toFixed(2);
+      inp.oninput = () => { S[def.k] = parseFloat(inp.value); val.textContent = S[def.k].toFixed(2); save(); };
+      wrap.append(inp, val); row.appendChild(wrap);
+    } else {
+      const seg = document.createElement('div'); seg.className = 'seg';
+      def.opts.forEach(([v, t]) => {
+        const b = document.createElement('button'); b.textContent = t; b.className = S[def.k] === v ? 'on' : '';
+        b.onclick = () => { S[def.k] = v; save(); renderSettings(); applyResponse(); };
+        seg.appendChild(b);
+      });
+      row.appendChild(seg);
+    }
+    if(def.hint){ const h = document.createElement('div'); h.className = 'hint'; h.textContent = def.hint; row.appendChild(h); }
+    rowsEl.appendChild(row);
+  });
+}
+document.getElementById('reset').onclick = () => { S = Object.assign({}, DEFAULTS); save(); renderSettings(); applyResponse(); };
+
+// ---------- Audio ----------
+let inBus = null, tAn = null, tFreq = null, tPrev = null;
+let actx = null, analyser = null, freq = null, tdata = null, srcKind = null, srcNodes = [], stopFns = [], outBus = null;
+function applyResponse(){ if(directAn) directAn.smoothingTimeConstant = {smooth:0.5, fast:0.15, instant:0}[S.response]; if(analyser) analyser.smoothingTimeConstant = {smooth:0.5, fast:0.15, instant:0}[S.response]; }
+function ensureCtx(){
+  if(!actx){
+    actx = NATIVE ? new AudioContext({sampleRate: 48000}) : new (window.AudioContext || window.webkitAudioContext)();
+    analyser = actx.createAnalyser(); analyser.fftSize = 1024; analyser.minDecibels = -100; analyser.maxDecibels = -18;
+    freq = new Uint8Array(analyser.frequencyBinCount); tdata = new Uint8Array(analyser.fftSize);
+    inBus = actx.createGain(); inBus.connect(analyser);
+    tAn = actx.createAnalyser(); tAn.fftSize = 1024; tAn.smoothingTimeConstant = 0; tAn.minDecibels = -100; tAn.maxDecibels = -18;
+    inBus.connect(tAn); tFreq = new Uint8Array(tAn.frequencyBinCount); tPrev = new Uint8Array(tAn.frequencyBinCount);
+    // fine analyser for the tone map: separates individual notes in the lows and mids
+    toneAn = actx.createAnalyser(); toneAn.fftSize = 4096; toneAn.smoothingTimeConstant = 0; toneAn.minDecibels = -100; toneAn.maxDecibels = -18;
+    inBus.connect(toneAn); toneFreq = new Uint8Array(toneAn.frequencyBinCount);
+    setInterval(tempoTick, 10);
+    applyResponse();
+  }
+  if(actx.state === 'suspended') actx.resume();
+}
+function stopSource(){
+  curAudio = null;
+  TEMPO.filled = 0; TEMPO.lastIdx = 0; TEMPO.disagree = 0; TEMPO.locked = 0; TEMPO.hist = []; A.bpm = 0;
+  stopFns.forEach(f => { try{ f(); }catch(e){} }); stopFns = [];
+  srcNodes.forEach(n => { try{ n.disconnect(); }catch(e){} }); srcNodes = [];
+  srcKind = null; markSrc(); LEARN.x = null; LEARN.xf = null; LEARN.pos = -1; LEARN.E = -1; LEARN.primed = false;
+}
+function markSrc(){ document.querySelectorAll('#srcs button').forEach(b => b.classList.toggle('on', b.dataset.src === srcKind)); }
+let anDelay = null;
+function playThrough(n){
+  // the speakers play the sound a little after the page hears it; delay the analysis to match
+  if(!anDelay){ anDelay = actx.createDelay(1); anDelay.connect(inBus); }
+  anDelay.delayTime.value = Math.min(0.04, ((actx.outputLatency || 0) + (actx.baseLatency || 0))*0.5);
+  n.connect(actx.destination); n.connect(anDelay);
+}
+
+// ---------- Android app: sound captured natively (this phone's playback, or the microphone) ----------
+const NATIVE = window.NocturneNative || null;
+// The captured sound is analysed the moment it arrives (no audio queue in between): the newest samples go
+// into a ring, and these stand-ins for the browser's analysers run their own FFT on the newest 1024 samples.
+const NRING = new Float32Array(8192); let nPos = 0;
+function pumpNative(){
+  if(!NATIVE || nativeMode === null) return;
+  const b64 = NATIVE.read(); if(!b64) return;
+  const bin = atob(b64), n = bin.length >> 2, dv = new DataView(new ArrayBuffer(bin.length));
+  for(let i=0;i<bin.length;i++) dv.setUint8(i, bin.charCodeAt(i));
+  for(let i=0;i<n;i++){ NRING[nPos] = dv.getFloat32(i*4, true); nPos = (nPos + 1) & 8191; }
+}
+function makeDirectAnalyser(N){
+  const re = new Float32Array(N), im = new Float32Array(N), win = new Float32Array(N), mag = new Float32Array(N/2), sm = new Float32Array(N/2);
+  for(let i=0;i<N;i++){ const x = i/N; win[i] = 0.42 - 0.5*Math.cos(2*Math.PI*x) + 0.08*Math.cos(4*Math.PI*x); }   // Blackman, like the browser's
+  const rev = new Uint32Array(N); for(let i=0, bits=Math.log2(N); i<N; i++){ let r=0; for(let b=0;b<bits;b++) r |= ((i>>b)&1) << (bits-1-b); rev[i] = r; }
+  const an = {fftSize:N, frequencyBinCount:N/2, smoothingTimeConstant:0, minDecibels:-100, maxDecibels:-18};
+  function fft(){
+    pumpNative();
+    for(let i=0;i<N;i++){ const v = NRING[(nPos - N + i + 8192) & 8191]; re[rev[i]] = v*win[i]; im[rev[i]] = 0; }
+    for(let size=2; size<=N; size<<=1){
+      const half = size>>1, ang = -2*Math.PI/size;
+      for(let st=0; st<N; st+=size) for(let k=0;k<half;k++){
+        const c = Math.cos(ang*k), s2 = Math.sin(ang*k), a = st+k, b = a+half;
+        const tr = re[b]*c - im[b]*s2, ti = re[b]*s2 + im[b]*c;
+        re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+      }
+    }
+    const tau = an.smoothingTimeConstant;
+    for(let k=0;k<N/2;k++){ const m = Math.hypot(re[k], im[k])/N; sm[k] = tau*sm[k] + (1-tau)*m; }
+  }
+  an.getByteFrequencyData = arr => {
+    fft(); const lo = an.minDecibels, sc = 255/(an.maxDecibels - lo);
+    for(let k=0;k<arr.length;k++){ const db = 20*Math.log10(sm[k] + 1e-12); arr[k] = Math.max(0, Math.min(255, (db - lo)*sc)); }
+  };
+  an.getByteTimeDomainData = arr => {
+    pumpNative();
+    for(let i=0;i<arr.length;i++){ const v = NRING[(nPos - arr.length + i + 8192) & 8191]; arr[i] = Math.max(0, Math.min(255, 128 + v*128)); }
+  };
+  return an;
+}
+let nativeMode = null, directAn = null, directT = null, realAn = null, realT = null;
+function startNative(mode){
+  ensureCtx(); stopSource();
+  NATIVE.start(mode); nativeMode = mode; NRING.fill(0);
+  if(!directAn){ directAn = makeDirectAnalyser(1024); directT = makeDirectAnalyser(1024); realAn = analyser; realT = tAn; }
+  directAn.smoothingTimeConstant = analyser.smoothingTimeConstant;
+  analyser = directAn; tAn = directT;
+  srcKind = mode === 'mic' ? 'mic' : 'system'; markSrc();
+  let lastStatus = '';
+  const timer = setInterval(() => {
+    const st = NATIVE.status();
+    if(st !== lastStatus){
+      lastStatus = st;
+      if(st === 'device') toast("Listening to the sound this phone plays.", 3000);
+      else if(st === 'mic-fallback') toast("Nothing is playing on this phone, so I'm listening through the microphone. Play something and it switches back.", 5000);
+      else if(st === 'mic') toast("Listening through the microphone.", 3000);
+      else if(st === 'no-permission') toast("Nocturne needs microphone permission to hear sound. Allow it in the phone's settings.", 7000);
+    }
+  }, 250);
+  stopFns.push(() => { clearInterval(timer); NATIVE.stop(); nativeMode = null; analyser = realAn; tAn = realT; });
+}
+
+async function startMic(){
+  if(NATIVE){ startNative('mic'); return; }
+  ensureCtx(); stopSource();
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}});
+    const n = actx.createMediaStreamSource(stream); n.connect(inBus);
+    srcNodes.push(n); stopFns.push(() => stream.getTracks().forEach(t=>t.stop()));
+    srcKind = 'mic'; markSrc(); toast("Listening through the microphone. Raise Sensitivity in Settings if it looks weak.", 3500);
+  }catch(e){
+    toast("The microphone is blocked on this page. Open the offline copy (Nocturne.html) in Chrome or Edge to use it, or pick a music file.", 9000);
+  }
+}
+async function startSystem(){
+  if(NATIVE){ startNative('device'); return; }
+  ensureCtx(); stopSource();
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){
+    toast("This browser can't capture the device's sound. On a phone, use the microphone in the offline copy, or pick a music file.", 9000); return;
+  }
+  try{
+    const stream = await navigator.mediaDevices.getDisplayMedia({video:true, audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}, systemAudio:'include'});
+    if(!stream.getAudioTracks().length){
+      stream.getTracks().forEach(t=>t.stop());
+      toast("No sound was shared. Try again, choose 'Entire screen', and switch on 'Also share system audio'.", 9000); return;
+    }
+    const n = actx.createMediaStreamSource(new MediaStream(stream.getAudioTracks())); n.connect(inBus);
+    srcNodes.push(n); stopFns.push(() => stream.getTracks().forEach(t=>t.stop()));
+    srcKind = 'system'; markSrc(); toast("Reacting to everything this computer plays.", 3000);
+  }catch(e){
+    toast("Sharing this device's sound isn't allowed on this page. Open the offline copy (Nocturne.html) in Chrome or Edge on Windows to use it.", 9000);
+  }
+}
+const filein = document.getElementById('filein');
+filein.onchange = () => {
+  const f = filein.files[0]; if(!f) return;
+  ensureCtx(); stopSource();
+  const a = new Audio(); a.src = URL.createObjectURL(f); a.loop = true; curAudio = a; curName = f.name;
+  const n = actx.createMediaElementSource(a); playThrough(n);
+  srcNodes.push(n); stopFns.push(() => { a.pause(); URL.revokeObjectURL(a.src); });
+  a.play().then(()=>{ srcKind='file'; markSrc(); toast("Playing " + f.name, 3000); }).catch(()=>toast("This file couldn't be played."));
+  filein.value = '';
+};
+
+// Demo: the user's own track, with the synthesized loop as a fallback.
+const TRACK_URL = /*__TRACK__*/'track.mp3';
+let trackBlobUrl = null, demoAudio = null, trackLoading = null, curAudio = null;
+// start downloading your track as soon as the page opens, so a tap plays it immediately
+function preloadTrack(){
+  if(!trackLoading) trackLoading = fetch(TRACK_URL).then(r => { if(!r.ok) throw new Error('fetch'); return r.blob(); })
+    .then(b => { trackBlobUrl = URL.createObjectURL(b); return trackBlobUrl; })
+    .catch(e => { trackLoading = null; throw e; });
+  return trackLoading;
+}
+preloadTrack().catch(() => {});
+function startDemo(){
+  ensureCtx(); stopSource();
+  srcKind = 'demo'; markSrc();
+  // play straight away inside the tap: the downloaded copy if ready, otherwise stream the file directly
+  const a = new Audio(); a.src = trackBlobUrl || TRACK_URL; a.loop = true; a.preload = 'auto';
+  demoAudio = a; curAudio = a;
+  const n = actx.createMediaElementSource(a); playThrough(n);
+  srcNodes.push(n); stopFns.push(() => a.pause());
+  a.play().then(() => toast("Playing your track (9:48). It loops at the end.", 3000))
+    .catch(() => { stopSource(); toast("Your track couldn't start. Tap Demo track again.", 6000); });
+}
+if(NATIVE){
+  document.getElementById('sysBtn').textContent = 'This phone';
+  // the app's main job: react to whatever this phone plays, falling back to the microphone
+  setTimeout(() => { if(!srcKind) startNative('device'); }, 700);
+}
+document.querySelectorAll('#srcs button').forEach(b => b.onclick = () => {
+  const k = b.dataset.src;
+  if(srcKind === k){ stopSource(); return; }
+  if(k === 'demo') startDemo(); else if(k === 'file') filein.click(); else if(k === 'mic') startMic(); else startSystem();
+});
+
+// ---------- Analysis ----------
+// Lows 25-150 Hz (kick, bass) · Mids 150-2500 Hz (vocals, synths, snare body) · Highs 2.5-16 kHz (hats, cymbals, air)
+const BANDS = [[25,150],[150,2500],[2500,16000]];
+// 10-band EQ (octaves around 31, 62, 125, 250, 500, 1k, 2k, 4k, 8k, 16k Hz) + the .1 subwoofer channel (20-80 Hz)
+const CH = [[22,44],[44,88],[88,177],[177,355],[355,710],[710,1420],[1420,2840],[2840,5680],[5680,11360],[11360,20000],[20,80]];
+const CH_NAMES = ['31','62','125','250','500','1k','2k','4k','8k','16k','.1'];
+const CHS = {t:new Float32Array(11), e:new Float32Array(11), f:new Float32Array(11), avg:new Float32Array(11).fill(0.2), max:new Float32Array(11).fill(0.15),
+  lev:new Float32Array(11), hit:new Float32Array(11), last:new Float64Array(11), hist:Array.from({length:11}, () => [])};
+const A = {spec:new Float32Array(SPEC_N), peak:new Float32Array(SPEC_N), gpk:0.5, wgain:2, waveF:null, shake:[0,0],
+  e:[0,0,0], avg:[0.3,0.3,0.3], lev:[0,0,0], hit:[0,0,0], clock:[0,0,0], fluxH:[[],[],[]], lastHit:[0,0,0], prev:null,
+  kicks:[], bpm:0, tempo:1, loudS:0, E:0, Eg:0, int:1, histL:[], histS:[], sampleT:0, pT:0,
+  p:{l97:1, lmax:1, s10:0, s50:1, s95:1, smax:1}, red:0, assemble:0, level:0};
+function analyse(dt, now){
+  const live = !!(srcKind && analyser);
+  const relR = {smooth:5, fast:10, instant:20}[S.response];
+  const fall = {off:99, slow:0.35, fast:1.3}[S.peaks];
+  const e = [0,0,0], flux = [0,0,0];
+  if(live){
+    analyser.getByteFrequencyData(freq);
+    analyser.getByteTimeDomainData(tdata);
+    const hz = actx.sampleRate/analyser.fftSize;
+    // TONE MAP: every note, however quiet. 256 log bins (30 Hz-16 kHz), the loudest partial in each bin (nothing
+    // averaged away), measured against that bin's own noise floor, so a faint tone shows as clearly as its loudness
+    // above the floor allows. Silence (below -94 dB) stays at zero.
+    const tone = !!(toneAn && analyser !== directAn);
+    if(tone) toneAn.getByteFrequencyData(toneFreq);
+    const hzT = tone ? actx.sampleRate/toneAn.fftSize : hz;
+    let tmax = -200; const rmax = [-200,-200,-200];
+    for(let i=0;i<TONE_N;i++){
+      const f0 = 20*Math.pow(1000, i/TONE_N), f1 = 20*Math.pow(1000, (i+1)/TONE_N);           // 20 Hz .. 20 kHz
+      let m = 0;
+      const F = tone && f1 < 1500 ? toneFreq : freq, w = tone && f1 < 1500 ? hzT : hz;
+      if(f1 - f0 < w){ // narrower than one FFT bin: interpolate, so the low end is a smooth curve, not steps
+        const c = Math.sqrt(f0*f1)/w - 0.5, j = Math.max(0, Math.floor(c)), u = c - j;
+        m = F[j]*(1-u) + F[Math.min(F.length-1, j+1)]*u;
+      } else { const a = Math.floor(f0/w), b = Math.floor(f1/w); for(let j=a;j<=b && j<F.length;j++) if(F[j] > m) m = F[j]; }
+      const d = m < 8 ? -200 : -100 + m/255*82 + 2.5*Math.log2(Math.max(f0,200)/1000);   // slight tilt: highs are naturally quieter
+      TONE.db[i] = d; if(d > tmax) tmax = d; const rg = i < 86 ? 0 : i < 171 ? 1 : 2; if(d > rmax[rg]) rmax[rg] = d;
+    }
+    // each third of the spectrum (lows 20-200 Hz, mids 200 Hz-2.2 kHz, highs 2.2-20 kHz) is measured against ITS OWN
+    // recent peak, so faint highs are as visible on their string as the bass is on its own
+    if(!TONE.pkR) TONE.pkR = [-60,-60,-60];
+    const G = LEARN.gate === undefined ? 1 : LEARN.gate;     // 0 in silence: nothing shows and nothing re-adapts
+    for(let r=0;r<3;r++) TONE.pkR[r] = Math.max(rmax[r], TONE.pkR[r] - dt*1.5*G, -75);
+    for(let i=0;i<TONE_N;i++){
+      const d = TONE.db[i];
+      if(d > -150) TONE.fl[i] += (d - TONE.fl[i])*Math.min(1, dt*(d < TONE.fl[i] ? 5 : 0.025));     // floor: drops fast, rises very slowly
+      // height = how close this tone is to the song's recent peak: the loudest note reaches 1, a note 24 dB quieter
+      // still reaches 0.5, one 40 dB down still shows a little. Only the noise floor itself is hidden.
+      const pk = TONE.pkR[i < 86 ? 0 : i < 171 ? 1 : 2];
+      const ref = Math.max(TONE.fl[i] + 3, pk - 45);
+      let t = Math.min(1.2, Math.max(0, (d - ref)/(pk + 2 - ref + 1e-3))*S.sens)*G;
+      if(d < -150) t = 0;
+      TONE.v[i] = t > TONE.v[i] ? t : TONE.v[i] + (t - TONE.v[i])*Math.min(1, dt*22);
+      toneBytes[i] = Math.min(255, TONE.v[i]*196);
+    }
+    // STRINGS' TONE MAP: every bin against ITS OWN recent peak (falls 2 dB/s), so the faintest highs up to 20 kHz
+    // show on their string as clearly as the loudest bass does on its own; only the noise floor stays hidden
+    for(let i=0;i<TONE_N;i++){
+      const d = TONE.db[i];
+      TONE.pkB[i] = Math.max(d, TONE.pkB[i] - dt*2*G, -90);
+      // its own slow floor (rises over minutes): a held high note or a steady shaker doesn't fade out of view
+      TONE.flS[i] += (d - TONE.flS[i])*Math.min(1, dt*(d < TONE.flS[i] ? 5 : 0.006));
+      const ref = Math.max(TONE.flS[i] + 3, TONE.pkB[i] - 36);
+      let t = Math.min(1.2, Math.max(0, (d - ref)/(TONE.pkB[i] + 1 - ref + 1e-3))*S.sens)*G;
+      if(d < -150) t = 0;
+      TONE.vs[i] = t > TONE.vs[i] ? t : TONE.vs[i] + (t - TONE.vs[i])*Math.min(1, dt*22);
+      toneSBytes[i] = Math.min(255, TONE.vs[i]*196);
+    }
+    // equalizer spectrum (log-spaced, gentle tilt so highs are visible)
+    let gmax = 0; const tmp = new Float32Array(SPEC_N);
+    for(let i=0;i<SPEC_N;i++){
+      const f0 = 30*Math.pow(16000/30, i/SPEC_N), f1 = 30*Math.pow(16000/30, (i+1)/SPEC_N);
+      let a = Math.floor(f0/hz), b = Math.max(a, Math.floor(f1/hz)), s2 = 0, m = 0;
+      for(let j=a;j<=b;j++){ const v = freq[Math.min(j,freq.length-1)]; s2 += v; if(v > m) m = v; }
+      tmp[i] = (s2/(b-a+1)*0.5 + m*0.5)/255 * (0.8 + 1.1*Math.pow(i/SPEC_N, 1.3));
+      if(tmp[i] > gmax) gmax = tmp[i];
+    }
+    A.gpk = Math.max(A.gpk*Math.pow(0.93, dt), gmax, 0.25);
+    if(!A.binAvg) A.binAvg = new Float32Array(SPEC_N);
+    for(let i=0;i<SPEC_N;i++){
+      A.binAvg[i] += (tmp[i] - A.binAvg[i])*Math.min(1, dt/3);
+      const nov = Math.min(1.2, Math.max(0, (tmp[i] - A.binAvg[i])/(A.binAvg[i]*0.6 + 0.03)))*G;
+      const ti = Math.max(0, Math.min(TONE_N-2, Math.round(TONE_N*Math.log(30*Math.pow(16000/30, (i+0.5)/SPEC_N)/20)/Math.log(1000))));
+      const tv = Math.max(TONE.v[ti], TONE.v[ti+1]);
+      const v = Math.min(1.25, tv*0.8 + nov*0.35*S.sens);
+      A.spec[i] = v > A.spec[i] ? v : A.spec[i] + (v - A.spec[i])*Math.min(1, dt*relR*1.6);
+    }
+    // band energy + spectral flux (onsets)
+    if(!A.prev) A.prev = new Uint8Array(freq.length);
+    for(let b=0;b<3;b++){
+      const lo = Math.max(1, Math.floor(BANDS[b][0]/hz)), hi = Math.min(freq.length-1, Math.ceil(BANDS[b][1]/hz));
+      let s2 = 0, f = 0;
+      for(let i=lo;i<=hi;i++){ s2 += freq[i]; const d = freq[i] - A.prev[i]; if(d > 0) f += d; }
+      const n = hi-lo+1;
+      e[b] = Math.min(1, s2/(n*255)*S.sens); flux[b] = f/(n*255)*S.sens;
+    }
+    for(let c=0;c<11;c++){
+      const lo = Math.max(1, Math.floor(CH[c][0]/hz)), hi = Math.min(freq.length-1, Math.max(lo, Math.ceil(CH[c][1]/hz)));
+      let s2 = 0, f = 0;
+      for(let i=lo;i<=hi;i++){ s2 += freq[i]; const d = freq[i] - A.prev[i]; if(d > 0) f += d; }
+      const n = hi-lo+1;
+      CHS.e[c] = Math.min(1, s2/(n*255)*S.sens); CHS.f[c] = f/(n*255)*S.sens;
+      const ti0 = Math.max(0, Math.floor(TONE_N*Math.log(Math.max(20,CH[c][0])/20)/Math.log(1000)));
+      const ti1 = Math.min(TONE_N-1, Math.max(ti0, Math.ceil(TONE_N*Math.log(Math.min(20000,CH[c][1])/20)/Math.log(1000))));
+      let tm = 0, ts = 0; for(let i=ti0;i<=ti1;i++){ tm = Math.max(tm, TONE.v[i]); ts += TONE.v[i]; }
+      CHS.t[c] = tm*0.6 + ts/(ti1-ti0+1)*0.4;
+    }
+    A.prev.set(freq);
+    // oscilloscope wave (smoothed so it glides)
+    let start = 0; for(let i=1;i<1024;i++){ if(tdata[i-1] < 128 && tdata[i] >= 128){ start = i; break; } }
+    let dev = 0; for(let i=0;i<WAVE_N;i++){ const d = Math.abs(tdata[start+i*3]-128); if(d > dev) dev = d; }
+    A.wgain += (Math.min(5, 60/Math.max(dev,4)) - A.wgain)*Math.min(1, dt*3);
+    if(!A.waveF) A.waveF = new Float32Array(WAVE_N);
+    const k = Math.min(1, dt*6);
+    for(let i=0;i<WAVE_N;i++){
+      let sum = 0; for(let j=-3;j<=3;j++) sum += tdata[Math.max(0, start+i*3+j)] - 128;
+      A.waveF[i] += (sum/7*A.wgain*G - A.waveF[i])*k;
+      waveBytes[i] = Math.max(0, Math.min(255, 128 + A.waveF[i]));
+    }
+  } else {
+    for(let i=0;i<SPEC_N;i++) A.spec[i] *= Math.exp(-dt*4);
+    for(let i=0;i<WAVE_N;i++) waveBytes[i] = 128;
+  }
+  for(let i=0;i<SPEC_N;i++){
+    A.peak[i] = fall > 50 ? A.spec[i] : Math.max(A.peak[i] - fall*dt, A.spec[i]);
+    specBytes[i] = Math.min(255, A.spec[i]*255); peakBytes[i] = Math.min(255, A.peak[i]*255);
+  }
+
+  // section energy: where this moment sits in the last 2 minutes of the song (intro ≈ low, drop ≈ 1)
+  const loud = e[0]*0.5 + e[1]*0.3 + e[2]*0.2;
+  A.loudS += (loud - A.loudS)*Math.min(1, dt*2.5);
+  if(live){
+    A.sampleT += dt;
+    if(A.sampleT > 0.1){ A.sampleT = 0; A.histL.push(loud); A.histS.push(A.loudS); if(A.histL.length > 1200){ A.histL.shift(); A.histS.shift(); } }
+    A.pT += dt;
+    if(A.pT > 1 && A.histL.length > 60){
+      A.pT = 0;
+      const l = [...A.histL].sort((x,y)=>x-y), sS = [...A.histS].sort((x,y)=>x-y), qq = (arr,f) => arr[Math.min(arr.length-1, Math.floor(arr.length*f))];
+      A.p = {l97:qq(l,0.97), lmax:l[l.length-1], s10:qq(sS,0.1), s50:qq(sS,0.5), s95:qq(sS,0.95), smax:sS[sS.length-1]};
+    }
+  }
+  const warm = live && A.histL.length > 50;
+  let Et = !live ? 0 : LEARN.E >= 0 ? LEARN.E
+       : warm ? Math.min(1, Math.max(0, (A.loudS - A.p.s10)/Math.max(0.02, A.p.s95 - A.p.s10)))
+              : Math.min(0.8, Math.max(0, (A.loudS - 0.04)/0.45));
+  const taught = taughtEnergy();
+  A.autoE = Et;
+  if(taught >= 0) Et = taught;
+  if(taught < 0) Et = Math.min(1, Math.max(0, 0.5 + (Et - 0.5)*1.3));   // more sensitive: calm parts calmer, peaks reach full sooner
+  A.E += (Et - A.E)*Math.min(1, dt*(Et > A.E ? 14 : 0.7));        // rises instantly with the song, eases back down slowly (no dips between beats)
+  recordAuto();
+  const gate = Math.min(1, Math.max(0, (A.loudS - 0.02)/0.08));       // true silence -> nothing
+  A.Eg = gate*(0.3 + 0.7*A.E);
+  A.int = 0.45 + 1.7*Math.pow(A.E, 1.3);                                // much harder hits as the song gets more intense                                              // aggression follows the song section
+
+  // per band: level relative to its own recent average (1 = typical), rise fast, fall slower
+  const fallR = [9, 8, 13].map(x => x*relR/10);
+  if(!A.bmax) A.bmax = [0.2,0.2,0.2];
+  for(let b=0;b<3;b++){
+    A.avg[b] += (e[b] - A.avg[b])*Math.min(1, dt/4);
+    A.bmax[b] = Math.max(A.bmax[b]*Math.pow(0.99, dt), e[b], 0.08);
+    const rel = Math.min(1.6, Math.pow(e[b]/Math.max(A.avg[b], 0.03), 3)*0.6);   // moment-to-moment change
+    const abs = Math.pow(e[b]/A.bmax[b], 2.5)*1.3;                               // how loud this band is for this song
+    const t = live ? Math.min(1.6, rel*0.5 + abs*0.6)*A.Eg : 0;
+    A.lev[b] = t > A.lev[b] ? t : A.lev[b] + (t - A.lev[b])*Math.min(1, dt*fallR[b]);
+  }
+  // each of the 11 channels: its own level and its own beat detection
+  for(let c=0;c<11;c++){
+    const ec = live ? CHS.e[c] : 0;
+    CHS.avg[c] += (ec - CHS.avg[c])*Math.min(1, dt/4);
+    CHS.max[c] = Math.max(CHS.max[c]*Math.pow(0.99, dt), ec, 0.06);
+    const relc = Math.min(1.6, Math.pow(ec/Math.max(CHS.avg[c], 0.03), 3)*0.6);
+    const absc = Math.pow(ec/CHS.max[c], 2.5)*1.3;
+    // direct reading: how loud this channel's frequencies really are (instant, nothing to learn),
+    // with a tilt so naturally quieter high frequencies still register (like a pink-noise-corrected analyser)
+    const tilt = c === 10 ? 0 : [0, 0, 0, 0.02, 0.05, 0.08, 0.12, 0.16, 0.22, 0.28][c];
+    const tc = live ? Math.min(1.4, CHS.t[c]*1.15)*(0.7 + 0.3*A.E) : 0;
+    CHS.lev[c] = tc > CHS.lev[c] ? tc : CHS.lev[c] + (tc - CHS.lev[c])*Math.min(1, dt*8*relR/10);
+    const hst = CHS.hist[c], fc = live ? CHS.f[c] : 0; hst.push(fc); if(hst.length > 45) hst.shift();
+    const mean = hst.reduce((x,y)=>x+y,0)/hst.length;
+    const sd = Math.sqrt(hst.reduce((x,y)=>x+(y-mean)*(y-mean),0)/hst.length);
+    if(live && A.Eg > 0.05 && fc > mean + 1.3*sd + 0.002 && now - CHS.last[c] > (c === 10 || c < 2 ? 130 : 90)){
+      const str = Math.min(1, 0.45 + (fc-mean)/(4*sd + 1e-4));
+      CHS.hit[c] = Math.max(CHS.hit[c], str*Math.min(1, 0.4 + A.Eg)); CHS.last[c] = now;
+    }
+    CHS.hit[c] *= Math.exp(-dt*(c === 10 || c < 3 ? 9 : c < 6 ? 12 : 16));
+  }
+  // per band hits: spectral flux above an adaptive threshold
+  const gap = [150, 90, 60], dec = [9, 11, 18];
+  for(let b=0;b<3;b++){
+    if(b === 0){ A.kickMax = Math.max(flux[0], (A.kickMax || 0)*Math.pow(0.5, dt/10), 0.002); A.core = (A.core || 0)*Math.exp(-dt*2.2); A.bassMax = Math.max(e[0], (A.bassMax || 0)*Math.pow(0.5, dt/40)); }   // bass must be near full: no kick drum, no core
+    const hst = A.fluxH[b]; hst.push(flux[b]); if(hst.length > 45) hst.shift();
+    const mean = hst.reduce((x,y)=>x+y,0)/hst.length;
+    const sd = Math.sqrt(hst.reduce((x,y)=>x+(y-mean)*(y-mean),0)/hst.length);
+    // the low band's beat IS the kick drum from the .1 detector (exact 10 ms analysis); bass wobbles don't count
+    if(b === 0 && LEARN.an){ A.hit[b] *= Math.exp(-dt*dec[b]); continue; }
+    if(live && A.Eg > 0.05 && flux[b] > mean + 1.3*sd + 0.0015 && now - A.lastHit[b] > gap[b]){
+      const str = Math.min(1, 0.45 + (flux[b]-mean)/(4*sd + 1e-4));
+      A.hit[b] = Math.max(A.hit[b], str*Math.min(1, 0.4 + A.Eg));
+      A.lastHit[b] = now;
+      if(b === 0){
+        // Radial core: grows only on a real kick (as strong as the kicks of the last ~20 s), then keeps shrinking
+        if(str > 0.75){ A.kicks.push(now); if(A.kicks.length > 32) A.kicks.shift(); }
+        if(S.shake === 'on' && A.E > 0.55){ const ang = Math.random()*Math.PI*2, m = 0.006*A.int*str; A.shake = [Math.cos(ang)*m, Math.sin(ang)*m]; }
+      }
+    }
+    A.hit[b] *= Math.exp(-dt*dec[b]);
+  }
+  A.tempo = A.bpm ? Math.min(1.7, Math.max(0.5, A.bpm/124)) : 1;
+  // Light speed: its own ship. Starts at rest, takes several seconds to reach speed, eases off over ~8 s when the
+  // music calms; every kick drum surges it forward. The ship's light eases the same way.
+  if(!A.hs) A.hs = {v:0, x:0, b:0, e:0, spin:0};
+  { const hs = A.hs, hT = live ? A.tempo*(0.9 + 1.5*A.E + 0.4*(A.level || 0)) : 0;
+    hs.v += (hT - hs.v)*Math.min(1, dt*(hT > hs.v ? 0.9 : 0.25));
+    hs.b = Math.max(hs.b*Math.exp(-dt*2.5), (A.core || 0)*0.7*A.E*Math.min(1, hs.v));
+    hs.x += (hs.v + hs.b)*dt;
+    hs.spin += dt*(live ? 0.05 + 0.3*A.lev[1]*A.E : 0);
+    const hE = live ? A.E : 0; hs.e += (hE - hs.e)*Math.min(1, dt*(hE > hs.e ? 1.0 : 0.25)); }
+  // each band's clock runs as fast as that band is loud (times tempo)
+  const mv = dt*A.tempo;
+  A.clock[0] += mv*(A.lev[0]*1.1 + A.hit[0]*0.5);
+  A.clock[1] += mv*(A.lev[1]*1.0);
+  A.clock[2] += mv*(A.lev[2]*1.3 + A.hit[2]*0.4);
+  A.level = A.lev[0]*0.5 + A.lev[1]*0.3 + A.lev[2]*0.2;
+  const ag = live ? Math.min(1.3, A.level*0.6 + A.E*0.25 + A.hit[0]*0.35 + A.hit[2]*0.15) : 0;
+  A.aggr = (A.aggr || 0) + (ag - (A.aggr || 0))*Math.min(1, dt*(ag > (A.aggr||0) ? 12 : 3));
+
+  // red only at the loudest 3% of moments; Shatter gathers only on the louder half
+  const redT = warm ? Math.min(1, Math.max(0, (loud - A.p.l97)/Math.max(0.01, A.p.lmax - A.p.l97))) : 0;
+  A.red += (redT - A.red)*Math.min(1, dt*(redT > A.red ? 12 : 3));
+  const asm = live ? Math.pow(Math.min(1, Math.max(0, (A.loudS - A.p.s50)/Math.max(0.01, A.p.smax - A.p.s50))), 2.2) : 0;
+  A.assemble += (asm - A.assemble)*Math.min(1, dt*3);
+  A.shake[0] *= Math.exp(-dt*14); A.shake[1] *= Math.exp(-dt*14);
+
+  // live readout on the bar
+  A.uiT = (A.uiT || 0) + dt; if(A.uiT < 0.05) return; A.uiT = 0;
+  for(let c=0;c<11;c++){
+    const el = meterEls[c]; el.fill.style.height = Math.min(100, CHS.lev[c]/1.6*100) + '%';
+    el.box.classList.toggle('hit', CHS.hit[c] > 0.45);
+  }
+  bpmEl.textContent = A.bpm && live ? Math.round(A.bpm) + ' BPM' : '— BPM';
+  energyEl.style.width = (A.E*100) + '%';
+}
+
+// ---------- Tempo (runs on its own 100 Hz timer, independent of the frame rate) ----------
+// onset strength -> 8 s history -> autocorrelation over 60-200 BPM, with a mild preference around 120
+const TEMPO = {locked:0, hist:[], songReset:false, grid:new Float32Array(800), low:new Float32Array(800), pos:0, lastIdx:0, filled:0, acT:0, disagree:0};
+// ENERGY LEARNED FROM YOUR TEACHING (Demo track, 3 songs, your curve smoothed over ~4 s, scale 0-100).
+// What your energy follows: strong bass and bright highs compared with the low-mids (drops are bass + highs; breakdowns
+// are pads and chords in the low-mids), how close the song is to the loudest it has been, and the kick: a steady kick
+// adds energy, kicks getting busier than the last ~30 s (a build-up) hold it back until the drop lands.
+// Every feature is a ratio or a change, so the volume doesn't matter. Tested by predicting each song from the other two:
+// on average within 9 points of your curve.
+// The sound is analysed in exact 10 ms steps from the raw audio (not at the screen's frame rate), so a slow or busy
+// device gets the same energy as a fast one.
+const LEARN = {w:[11.219, 7.601, 3.773, -9.891, 2.944, 74.595], mu:[-0.60193, -13.11202, -1.56391, 0.00146, 0.02994], sd:[7.46035, 5.27088, 2.51173, 0.00361, 0.00503],
+  x:null, pk:0, kickL:0, prev:null, E:-1, an:null, buf:null, pos:-1, re:null, im:null, win:null, cs:null, sn:null, rev:null, byt:null};
+function learnInit(){
+  const N = 1024; LEARN.an = actx.createAnalyser(); LEARN.an.fftSize = 32768; inBus.connect(LEARN.an);
+  LEARN.buf = new Float32Array(32768); LEARN.re = new Float32Array(N); LEARN.im = new Float32Array(N); LEARN.byt = new Uint8Array(N/2);
+  LEARN.prev = new Uint8Array(N/2);
+  LEARN.win = Float32Array.from({length:N}, (_, i) => 0.42 - 0.5*Math.cos(2*Math.PI*i/N) + 0.08*Math.cos(4*Math.PI*i/N));
+  LEARN.cs = Float32Array.from({length:N/2}, (_, i) => Math.cos(-2*Math.PI*i/N)); LEARN.sn = Float32Array.from({length:N/2}, (_, i) => Math.sin(-2*Math.PI*i/N));
+  LEARN.rev = new Uint16Array(N); for(let i=0;i<N;i++){ let r = 0; for(let b=0;b<10;b++) r |= ((i>>b)&1)<<(9-b); LEARN.rev[i] = r; }
+}
+function learnFrame(off){       // one 1024-sample frame ending at LEARN.buf[off]: same maths as the browser's analyser
+  const N = 1024, re = LEARN.re, im = LEARN.im, B = LEARN.buf;
+  for(let i=0;i<N;i++){ const j = LEARN.rev[i]; re[j] = B[off - N + i]*LEARN.win[i]; im[j] = 0; }
+  for(let size=2; size<=N; size<<=1){ const h = size>>1, st = N/size;
+    for(let s0=0; s0<N; s0+=size) for(let j=0,k=0; j<h; j++, k+=st){ const a = s0+j, b = a+h, c = LEARN.cs[k], sn = LEARN.sn[k];
+      const tr = re[b]*c - im[b]*sn, ti = re[b]*sn + im[b]*c; re[b] = re[a]-tr; im[b] = im[a]-ti; re[a] += tr; im[a] += ti; } }
+  // the sub (bins under 80 Hz) unclipped: the browser's 0-255 scale tops out at -18 dB, and loud EDM sub sits there
+  LEARN.subRaw = 0; for(let i=1; i*actx.sampleRate/N < 80; i++){ const m = Math.sqrt(re[i]*re[i] + im[i]*im[i])/N; LEARN.subRaw += m*m; }
+  for(let i=0;i<N/2;i++){ const m = Math.sqrt(re[i]*re[i] + im[i]*im[i])/N, db = 20*Math.log10(m + 1e-12);
+    LEARN.byt[i] = Math.floor(Math.min(1, Math.max(0, (db + 100)/82))*255); }
+}
+function learnTick(){
+  if(!LEARN.an) learnInit();
+  const sr = actx.sampleRate, hz = sr/1024, hop = Math.round(sr*0.01), B = LEARN.buf, T = LEARN.byt;
+  LEARN.an.getFloatTimeDomainData(B);
+  const end = Math.round(actx.currentTime*sr);                 // absolute sample index of the newest sample in B
+  if(LEARN.pos < 0 || end - LEARN.pos > 30000){ LEARN.pos = end - hop*3; LEARN.primed = false; }
+  const P = i => Math.pow(10, (-100 + T[i]/255*82)/10);
+  const pw = (a, b) => { let p = 0; for(let i=Math.max(1, Math.ceil(a/hz)); i<512 && i*hz<b; i++) p += P(i); return 10*Math.log10(p + 1e-12); };
+  let steps = 0;
+  while(LEARN.pos + hop <= end && steps < 60){
+    LEARN.pos += hop; steps++;
+    learnFrame(B.length - (end - LEARN.pos));
+    if(!LEARN.primed){ LEARN.prev.set(T); LEARN.primed = true; continue; }   // first frame: nothing to compare with yet
+    let k = 0, kn = 0;
+    for(let i=Math.max(1, Math.ceil(60/hz)); i*hz<200; i++){ k += Math.max(0, T[i] - LEARN.prev[i])/255; kn++; }
+    LEARN.prev.set(T);
+    // .1 CHANNEL BEAT (20-80 Hz) for the Radial solid ring: a kick is the sub jumping >= 4 dB above where it was
+    // 20-50 ms earlier while it's near its recent peak. Rolling sub-bass between kicks doesn't count.
+    { const sdb = 10*Math.log10(LEARN.subRaw + 1e-14);
+      const H = LEARN.subH || (LEARN.subH = []); H.push(sdb); if(H.length > 6) H.shift();
+      LEARN.subPk = Math.max(sdb, (LEARN.subPk === undefined ? sdb : LEARN.subPk) - 0.1*0.01);   // the kick's usual level (falls 6 dB a minute)
+      LEARN.subT = (LEARN.subT || 0) + 1;
+      LEARN.subAvg = LEARN.subAvg === undefined ? sdb : LEARN.subAvg + (sdb - LEARN.subAvg)*0.01;   // ~1 s average
+      const lo = Math.min(...H.slice(0, -1)), rise = sdb - lo;
+      // a kick lands clearly above the rolling bass (>= 3 dB over the last second's average, after an 8 dB jump), not just back up to it
+      if(H.length >= 4 && rise > 8 && (LEARN.gate === undefined || LEARN.gate > 0.5) && sdb > LEARN.subAvg + 3 && sdb > LEARN.subPk - 6 && LEARN.subT > Math.max(25, A.bpm > 0 ? 0.7*6000/A.bpm : 0)){   // at most one per beat
+        const ks = Math.min(1, 0.65 + (rise - 8)/14); LEARN.subT = 0;
+        A.core = Math.max(A.core || 0, ks);                              // Radial solid ring, Wave punch
+        A.hit[0] = Math.max(A.hit[0], ks*Math.min(1, 0.4 + A.Eg));        // every style's kick (uLowHit)
+        A.lastHit[0] = performance.now(); A.kickT = A.lastHit[0];
+        A.kicks.push(A.kickT); if(A.kicks.length > 32) A.kicks.shift();
+        if(S.shake === 'on' && A.E > 0.55){ const ang = Math.random()*Math.PI*2, m = 0.006*A.int*ks; A.shake = [Math.cos(ang)*m, Math.sin(ang)*m]; }
+      } }
+    const raw = [pw(60,200), pw(200,800), pw(3000,10000), pw(0,sr/2), k/Math.max(1,kn)];
+    // SILENCE GATE: loudness against the fixed reference. Below it nothing moves, however long the quiet lasts
+    // (nothing adapts upward to the room noise any more).
+    LEARN.lv = LEARN.lv === undefined ? raw[3] : LEARN.lv + (raw[3] - LEARN.lv)*(raw[3] > LEARN.lv ? 0.2 : 0.01/0.25);
+    LEARN.gate = Math.max(0, Math.min(1, (LEARN.lv - (learnRef() - 34))/8));
+    // silence for 1.2 s (between songs) -> the next sound is a new song
+    if(raw[3] < -60){ LEARN.quiet = (LEARN.quiet || 0) + 1; if(LEARN.quiet > 120) LEARN.newSong = true; continue; }
+    LEARN.quiet = 0;
+    if(!LEARN.x || LEARN.newSong){
+      // A NEW SONG (after 1.2 s of silence): only the tempo starts over. Loudness is judged against a FIXED reference,
+      // not the song's own history, so starting or seeking anywhere in a song reads the same as playing through it.
+      LEARN.x = raw.slice(); LEARN.xf = raw.slice(); if(LEARN.kickL === undefined || !LEARN.kickL) LEARN.kickL = 0.03; LEARN.age = 0; LEARN.newSong = false;
+      TEMPO.songReset = true;
+    }
+    LEARN.age = (LEARN.age || 0) + 0.01;
+    for(let j=0;j<5;j++) LEARN.x[j] += (raw[j] - LEARN.x[j])*(0.01/3);
+    for(let j=0;j<5;j++) LEARN.xf[j] += (raw[j] - LEARN.xf[j])*(0.01/0.4);   // the same features, 0.4 s: a rise shows at once
+    LEARN.pk = learnRef();                                        // constant: moves only with the Sensitivity setting
+    LEARN.kickL += (Math.min(raw[4], 0.1) - LEARN.kickL)*(0.01/8);   // the usual kick strength over ~8 s (a seek settles fast)
+    // bass level right now (0.3 s) and the strongest it has been lately: is the kick drum actually playing?
+    LEARN.bf = LEARN.bf === undefined ? raw[0] : LEARN.bf + (raw[0] - LEARN.bf)*(0.01/0.3);
+    LEARN.bmax = Math.max(LEARN.bf, (LEARN.bmax === undefined ? LEARN.bf : LEARN.bmax) - 0.15*0.01);
+  }
+  if(!LEARN.x) return;
+  const X = LEARN.x, f = [X[0] - X[1], X[2] - X[1], X[3] - LEARN.pk, X[4] - LEARN.kickL, X[4]];
+  let e = LEARN.w[5]; for(let j=0;j<5;j++) e += LEARN.w[j]*(f[j] - LEARN.mu[j])/LEARN.sd[j];
+  const XF = LEARN.xf || X, ff = [XF[0] - XF[1], XF[2] - XF[1], XF[3] - LEARN.pk, XF[4] - LEARN.kickL, XF[4]];
+  let ef = LEARN.w[5]; for(let j=0;j<5;j++) ef += LEARN.w[j]*(ff[j] - LEARN.mu[j])/LEARN.sd[j];
+  // instant up, settled down: when the song rises the energy follows immediately; it eases back on the slower reading
+  LEARN.E = Math.min(1, Math.max(0, Math.max(e, ef)/100))*(LEARN.gate === undefined ? 1 : LEARN.gate);
+}
+// The loudness that counts as "full" for the energy: fixed (-20 dB, fitted to the taught demo track), 12 dB lower for the
+// microphone (it hears the room, not the file). Sensitivity moves it: x2 sensitivity = 12 dB more sensitive.
+function learnRef(){ return (srcKind === 'mic' ? -32 : -20) - 12*Math.log2(Math.max(0.3, S.sens)/1.1); }
+function tempoTick(){
+  if(!srcKind || !tAn) return;
+  tAn.getByteFrequencyData(tFreq);
+  const hz = actx.sampleRate/tAn.fftSize, top = Math.min(tFreq.length, Math.ceil(5000/hz));
+  if(analyser !== directAn) learnTick();
+  let o = 0, ol = 0;
+  for(let i=1;i<top;i++){ const d = tFreq[i] - tPrev[i]; if(d > 0){ o += d*(i*hz < 200 ? 1.5 : 1); if(i*hz < 150) ol += d; } }
+  tPrev.set(tFreq);
+  const idx = Math.floor(performance.now()/10);
+  if(!TEMPO.lastIdx) TEMPO.lastIdx = idx - 1;
+  let steps = Math.min(800, idx - TEMPO.lastIdx);
+  while(steps-- > 1){ TEMPO.grid[TEMPO.pos] = 0; TEMPO.low[TEMPO.pos] = 0; TEMPO.pos = (TEMPO.pos+1)%800; TEMPO.filled++; }
+  if(idx > TEMPO.lastIdx){ TEMPO.grid[TEMPO.pos] = o; TEMPO.low[TEMPO.pos] = ol; TEMPO.pos = (TEMPO.pos+1)%800; TEMPO.filled++; }
+  else { const p = (TEMPO.pos+799)%800; TEMPO.grid[p] = Math.max(TEMPO.grid[p], o); TEMPO.low[p] = Math.max(TEMPO.low[p], ol); }
+  TEMPO.lastIdx = Math.max(TEMPO.lastIdx, idx);
+  if(TEMPO.filled < 400 || performance.now() - TEMPO.acT < 500) return;
+  TEMPO.acT = performance.now();
+  const N = Math.min(800, TEMPO.filled);
+  // kick/bass onsets: compress, remove the slow trend, then autocorrelate
+  const x = new Float32Array(N);
+  // the kick AND the rest of the kit (snare, clap, hats all sit on the same grid)
+  let m = 0, mg = 0; const lo = new Float32Array(N), gr = new Float32Array(N);
+  for(let i=0;i<N;i++){ const j = (TEMPO.pos - N + i + 1600)%800; lo[i] = TEMPO.low[j]; gr[i] = TEMPO.grid[j]; m += lo[i]; mg += gr[i]; }
+  m = m/N + 1e-9; mg = mg/N + 1e-9;
+  for(let i=0;i<N;i++) x[i] = Math.log1p(lo[i]/m) + 0.6*Math.log1p(gr[i]/mg);
+  const y = new Float32Array(N); let run = 0;
+  for(let i=0;i<N;i++){ run += x[i] - (i >= 31 ? x[i-31] : 0); const c = Math.min(i+1, 31); y[Math.max(0, i-15)] = Math.max(0, x[Math.max(0, i-15)] - run/c); }
+  let ym = 0; for(let i=0;i<N;i++) ym += y[i]; ym /= N;
+  const r = new Float32Array(203);
+  for(let lag=27; lag<=202; lag++){ let sum = 0; for(let i=lag;i<N;i++) sum += (y[i]-ym)*(y[i-lag]-ym); r[lag] = sum/(N-lag); }
+  let bestLag = 0, best = -1e9;
+  for(let lag=30; lag<=100; lag++){ const sc = r[lag]*Math.exp(-0.5*Math.pow(Math.log2(6000/lag/120)/0.8, 2)); if(sc > best){ best = sc; bestLag = lag; } }
+  if(!bestLag || r[bestLag] <= 0) return;
+  // octave: pick the fastest of half / same / double whose rhythm is still clearly there
+  const pk = c => { const i = Math.round(c); return Math.max(r[i-1], r[i], r[i+1]); };
+  const cands = [bestLag/2, bestLag, bestLag*2].filter(c => c >= 30 && c <= 100).sort((a2,b2)=>a2-b2);
+  const topS = Math.max(...cands.map(pk));
+  let chosen = bestLag; for(const c of cands){ if(pk(c) >= 0.5*topS){ chosen = c; break; } }
+  let i0 = Math.max(28, Math.floor(chosen-1.5)), i1 = Math.min(201, Math.ceil(chosen+1.5)), bi = i0;
+  for(let i=i0;i<=i1;i++) if(r[i] > r[bi]) bi = i;
+  const den = r[bi-1] - 2*r[bi] + r[bi+1];
+  const lag = bi + (den < 0 ? Math.max(-0.5, Math.min(0.5, 0.5*(r[bi-1] - r[bi+1])/den)) : 0);
+  const nb = 6000/lag;
+  let r0 = 0; for(let i=0;i<N;i++) r0 += (y[i]-ym)*(y[i]-ym); r0 /= N;
+  const conf = r[bi]/(r0 + 1e-9);                                   // how clearly the beat repeats (0..1)
+  TEMPO.conf = conf;
+  // ONE BPM PER SONG: a first guess shows quickly, then it LOCKS once the beat has agreed with itself for a few seconds.
+  // Breakdowns and build-ups can't move a locked tempo; only a clearly different, steady beat for ~5 s (or a new song) can.
+  if(TEMPO.songReset){ TEMPO.songReset = false; TEMPO.locked = 0; TEMPO.hist = []; A.bpm = 0; }
+  const H = TEMPO.hist || (TEMPO.hist = []); H.push({b:nb, c:conf}); if(H.length > 20) H.shift();
+  const near = (x, y, tol) => Math.abs(x - y)/y < tol;
+  const sure = (n, c) => { const last = H.slice(-n); return last.length === n && last.every(v => v.c >= c && near(v.b, nb, 0.025)); };
+  if(!TEMPO.locked){
+    if(conf >= 0.2) A.bpm = A.bpm ? A.bpm + (nb - A.bpm)*0.5 : nb;         // provisional, only from a clear beat
+    if(sure(5, 0.3)){ TEMPO.locked = H.slice(-5).reduce((x,v)=>x+v.b,0)/5; A.bpm = TEMPO.locked; }
+  } else {
+    if(conf >= 0.3 && near(nb, TEMPO.locked, 0.03)){ TEMPO.locked += (nb - TEMPO.locked)*0.1; A.bpm = TEMPO.locked; }   // fine-tune only
+    // a different tempo only after ~8 s of a clear, steady, different beat (build-up rolls don't last that steady)
+    if(sure(16, 0.35) && !near(nb, TEMPO.locked, 0.05)){ TEMPO.locked = nb; A.bpm = nb; }
+  }
+}
+
+// ---------- Render ----------
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let w = Math.floor(innerWidth*dpr), h = Math.floor(innerHeight*dpr);
+  const maxPx = S.quality === 'balanced' ? 1920*1080 : 3840*2160;
+  if(w*h > maxPx){ const k = Math.sqrt(maxPx/(w*h)); w = Math.floor(w*k); h = Math.floor(h*k); }
+  if(canvas.width !== w || canvas.height !== h){ canvas.width = w; canvas.height = h; }
+  return [w, h];
+}
+// keep the frame rate at the screen's refresh rate: render the effects a little smaller when the GPU can't keep up
+const SCALES = [1, 0.85, 0.72, 0.6, 0.5];
+const perf = {dts:[], step:0, lastChange:0, goodSince:0};
+function adapt(dt, now){
+  perf.dts.push(dt); if(perf.dts.length > 120) perf.dts.shift();
+  if(S.quality !== 'auto'){ perf.step = 0; return; }
+  if(perf.dts.length < 60 || now - perf.lastChange < 1500) return;
+  const sorted = [...perf.dts].sort((x,y)=>x-y);
+  const refresh = Math.min(sorted[Math.floor(sorted.length*0.1)], 1/55);
+  const recent = perf.dts.slice(-30).reduce((x,y)=>x+y,0)/30;
+  if(recent > refresh*1.3 && perf.step < SCALES.length-1){ perf.step++; perf.lastChange = now; perf.goodSince = now; }
+  else if(recent < refresh*1.08){ if(now - perf.goodSince > 4000 && perf.step > 0){ perf.step--; perf.lastChange = now; perf.goodSince = now; } }
+  else perf.goodSince = now;
+}
+const MODE = Object.fromEntries(STYLES.map((s,i) => [s.id, i]));
+const COLOR = {picture:0, palette:1, heat:2, rainbow:3};
+let last = performance.now();
+const t0 = last;
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.1, (now-last)/1000); last = now;
+  analyse(dt, now);
+  if(!gl || !current) return;
+  adapt(dt, now);
+  const [W, Hh] = resize();
+  const w = Math.max(2, Math.round(W*SCALES[perf.step])), h = Math.max(2, Math.round(Hh*SCALES[perf.step]));
+  ensureTargets(w, h);
+  const pic = current.pic, sid = styleOf(pic), st = STYLES[MODE[sid]];
+  const key = pic.id + '|' + sid;
+  if(targets.key !== key){ if(sid === 'hyper' && A.hs){ A.hs.v = 0; A.hs.b = 0; A.hs.e = 0; } targets.key = key; gl.clearColor(0,0,0,1); targets.acc.forEach(x => { gl.bindFramebuffer(gl.FRAMEBUFFER, x.f); gl.clear(gl.COLOR_BUFFER_BIT); }); gl.bindFramebuffer(gl.FRAMEBUFFER, null); }
+  const L = A.lev, H = A.hit, C = A.clock;
+
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, specTex); gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,SPEC_N,1,gl.RED,gl.UNSIGNED_BYTE,specBytes);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, peakTex); gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,SPEC_N,1,gl.RED,gl.UNSIGNED_BYTE,peakBytes);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, waveTex); gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,WAVE_N,1,gl.RED,gl.UNSIGNED_BYTE,waveBytes);
+  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, toneTex); gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,TONE_N,1,gl.RED,gl.UNSIGNED_BYTE,toneBytes);
+  gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, toneSTex); gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,TONE_N,1,gl.RED,gl.UNSIGNED_BYTE,toneSBytes);
+  gl.activeTexture(gl.TEXTURE0);
+  if(pic.gen){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, genTarget.f); gl.viewport(0,0,GEN_W,GEN_H);
+    gl.useProgram(PG.p);
+    gl.uniform2f(PG.u.uRes, GEN_W, GEN_H); gl.uniform1f(PG.u.uTime, C[2]); gl.uniform1f(PG.u.uPhase, C[1]*3);
+    gl.uniform1f(PG.u.uBass, L[0]); gl.uniform1f(PG.u.uHigh, L[2]); gl.uniform1f(PG.u.uLevel, A.level);
+    gl.uniform1f(PG.u.uKick, H[0]); gl.uniform1f(PG.u.uGen, pic.gen);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, genTarget.t); gl.generateMipmap(gl.TEXTURE_2D);
+  }
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, current.tex);
+
+  // 1. scene
+  gl.bindFramebuffer(gl.FRAMEBUFFER, targets.scene.f); gl.viewport(0,0,w,h);
+  gl.useProgram(PS.p); const u = PS.u;
+  gl.uniform3fv(u.uPal0, pic.pal[0]); gl.uniform3fv(u.uPal1, pic.pal[1]); gl.uniform3fv(u.uPal2, pic.pal[2]); gl.uniform3fv(u.uPal3, pic.pal[3]);
+  gl.uniform2f(u.uRes, w, h); gl.uniform2fv(u.uShake, A.shake);
+  gl.uniform1f(u.uTime, (now-t0)/1000);
+  gl.uniform1f(u.uLow, L[0]); gl.uniform1f(u.uMid, L[1]); gl.uniform1f(u.uHigh, L[2]);
+  gl.uniform1f(u.uLowHit, H[0]); gl.uniform1f(u.uMidHit, H[1]); gl.uniform1f(u.uHighHit, H[2]);
+  gl.uniform1f(u.uLowT, C[0]); gl.uniform1f(u.uMidT, C[1]); gl.uniform1f(u.uHighT, C[2]);
+  // WAVE STRINGS (1, 3, 5 or 7): each takes an equal slice of 20 Hz-20 kHz. Per string: level, steadiness (a steady
+  // sound freezes it into a standing wave; changes and the mids make it flow) and its own beat detection.
+  const NS = +S.strings || 3;
+  if(!A.str || A.str.n !== NS) A.str = {n:NS, l:new Float32Array(7), s:new Float32Array(7), st:new Float32Array(7), p:new Float32Array(7),
+    hit:new Float32Array(7), age:new Float32Array(7).fill(9), last:new Float32Array(7), hist:Array.from({length:7}, () => []), prev:new Float32Array(TONE_N), pk:new Float32Array(7).fill(-60), wk:new Float32Array(7).fill(8), act:new Float32Array(7), glow:new Float32Array(7), cAvg:new Float32Array(7).fill(0.5), rest:new Float32Array(7)};
+  const SR = A.str, live2 = !!srcKind;
+  for(let b=0;b<NS;b++){
+    // this string's part of 20 Hz-20 kHz: an equal share, overlapping its neighbours a little (7.5% each side)
+    const i0 = Math.max(0, Math.floor(TONE_N*(b - 0.075)/NS)), i1 = Math.min(TONE_N, Math.ceil(TONE_N*(b + 1.075)/NS));
+    let fl = 0, dmax = -200, cw = 0, cs = 0;
+    for(let i=i0;i<i1;i++){ const v = TONE.vs[i]; fl += Math.max(0, v - SR.prev[i]); if(TONE.db[i] > dmax) dmax = TONE.db[i]; cw += v*(i - i0); cs += v; }
+    const fr = NS > 1 ? b/(NS-1) : 0.5;
+    const g = 1 + 0.2*Math.min(1, fr*2) + 0.3*Math.max(0, fr*2 - 1);        // highs x1.5, mids x1.2 sensitivity
+    // 1. AMPLITUDE = how loud its part is now, against its own loudest lately (falls 0.5 dB/s)
+    const G = LEARN.gate === undefined ? 1 : LEARN.gate;
+    SR.pk[b] = Math.max(dmax, SR.pk[b] - dt*0.5*G, -80);
+    const lvl = G <= 0 ? 0 : live2 && dmax > -150 ? G* Math.max(0, Math.min(1.2, (dmax - (SR.pk[b] - 30))/30)) : 0;
+    // bounce: every rise above its part's resting level throws the string up, then it drops back fast
+    SR.rest[b] += (lvl - SR.rest[b])*Math.min(1, dt*(lvl < SR.rest[b] ? 12 : 1.2));
+    const bounce = Math.max(0, lvl - SR.rest[b])*2.4;
+    const lt = Math.min(1.8, (lvl*0.45 + bounce)*g);
+    SR.l[b] = lt > SR.l[b] ? lt : SR.l[b] + (lt - SR.l[b])*Math.min(1, dt*(9 + 6*fr));
+    // 2. WAVELENGTH = where the sound sits inside its part: low in the part -> longer waves, high -> shorter.
+    //    Each string has its own range (low strings longer, high strings shorter), overlapping a little.
+    const cen = cs > 0.05 ? cw/cs/Math.max(1, i1 - i0 - 1) : 0.5;
+    SR.cAvg[b] += (cen - SR.cAvg[b])*Math.min(1, dt/2);                   // compared with a moment ago, so every move shows
+    const cRel = Math.max(-0.85, Math.min(1, (cen - SR.cAvg[b])*(16 - 7*fr)));   // low parts move less inside their range, so they listen closer
+    const wkT = 7*Math.pow(4, fr)*(1 + 0.8*cRel)*(0.8 + 0.4*cen);    // stretches and squeezes clearly
+    SR.wk[b] += (wkT - SR.wk[b])*Math.min(1, dt*8);
+    // 3. RIGHT-TO-LEFT MOVEMENT = how busy its part is: changes in its tones push it along; a steady sound lets it
+    //    stand still (standing wave)
+    // onset strength: the biggest jumps in its part (top 8 bins) -> a hi-hat, shaker or rim click that touches only part
+    // of the slice still counts as a hit (the plain average used to wash it out)
+    let f = 0;
+    if(live2){ const jumps = []; for(let i=i0;i<i1;i++){ const dv = TONE.vs[i] - SR.prev[i]; if(dv > 0) jumps.push(dv); }
+      jumps.sort((x,y)=>y-x); for(let k=0;k<Math.min(8, jumps.length);k++) f += jumps[k]; f /= 8; }
+    SR.act[b] += (Math.min(1.5, (fl/(i1-i0))*g*14) - SR.act[b])*Math.min(1, dt*4);
+    SR.p[b] += dt*(0.6 + 0.6*fr)*(0.08 + SR.act[b]*2.2 + SR.l[b]*0.25)*1.8;   // a little slower
+    // beat in its part
+    const hs = SR.hist[b]; hs.push(f); if(hs.length > 45) hs.shift();
+    const mean = hs.reduce((x,y)=>x+y,0)/hs.length, sd = Math.sqrt(hs.reduce((x,y)=>x+(y-mean)*(y-mean),0)/hs.length);
+    if(live2 && hs.length > 10 && f > mean + 1.2*sd/g + 0.02/g && now - SR.last[b] > 90){
+      SR.hit[b] = Math.max(SR.hit[b], Math.min(1, 0.55 + (f - mean)/(4*sd + 1e-4))); SR.age[b] = 0; SR.last[b] = now;
+    }
+    SR.hit[b] *= Math.exp(-dt*(5 + 4*fr)); SR.age[b] += dt;
+    // 4. GLOW = its loudness and its hits, brighter as the song's energy rises (the low string also glows on the kick)
+    SR.glow[b] = (0.3 + 0.8*SR.l[b] + 0.6*SR.hit[b] + (b === 0 ? 0.6*(A.core || 0) : 0))*(0.55 + 0.6*A.E);
+  }
+  SR.prev.set(TONE.vs);
+  A.bgT = (A.bgT || 0) + dt*(srcKind ? 0.06 + 0.45*A.E*A.E : 0.03);   // background clock: drifts faster with energy
+  gl.uniform1f(u.uBgT, A.bgT); gl.uniform1f(u.uE, srcKind ? A.E : 0);
+  gl.uniform1f(u.uCore, A.core || 0); gl.uniform1f(u.uKAge, A.kickT ? Math.min(9, (performance.now() - A.kickT)/1000) : 9);
+  gl.uniform1f(u.uTravel, A.hs.x); gl.uniform1f(u.uSpeed, A.hs.v + A.hs.b); gl.uniform1f(u.uSpin, A.hs.spin); gl.uniform1f(u.uHyE, A.hs.e); gl.uniform1f(u.uNStr, NS); gl.uniform1fv(u.uStr, SR.l); gl.uniform1fv(u.uFlow, SR.p); gl.uniform1fv(u.uSHit, SR.hit); gl.uniform1fv(u.uSAge, SR.age); gl.uniform1fv(u.uSWK, SR.wk); gl.uniform1fv(u.uSGlow, SR.glow);
+  // wave: highs set the wavelength (smoothed a little so the line doesn't flicker), lows the height (instant)
+  A.wk = (A.wk || 6) + ((6 + 30*Math.min(1.5, L[2])) - (A.wk || 6))*Math.min(1, dt*5);
+  gl.uniform1f(u.uWaveK, A.wk);
+  gl.uniform1f(u.uLowA, Math.min(1.8, L[0]*1.0 + H[0]*0.45 + CHS.lev[10]*0.35));
+  gl.uniform1f(u.uEnergy, A.Eg); gl.uniform1f(u.uInt, A.int); gl.uniform1f(u.uAggr, A.aggr || 0);
+  gl.uniform1fv(u.uCh, CHS.lev); gl.uniform1fv(u.uChHit, CHS.hit);
+  gl.uniform1f(u.uMode, MODE[sid]); gl.uniform1f(u.uBars, S.bars);
+  gl.uniform1f(u.uLayout, {bottom:0, center:1, top:2}[S.layout]); gl.uniform1f(u.uBassMid, S.bass === 'middle' ? 1 : 0);
+  gl.uniform1f(u.uSeg, S.seg === 'on' ? 1 : 0); gl.uniform1f(u.uColor, COLOR[S.color]);
+  gl.uniform1f(u.uPeakOn, S.peaks === 'off' ? 0 : 1);
+  gl.uniform1f(u.uImgAsp, current.w/current.h); gl.uniform1f(u.uAssemble, A.assemble);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // 2. trails, MilkDrop-style: lows drive zoom, mids drive rotation and colour drift, highs drive ripple
+  const src = targets.acc[targets.i], dst = targets.acc[1-targets.i];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.f);
+  gl.useProgram(PC.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targets.scene.t);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, src.t);
+  const fb = st.fb, tr = {off:0, short:1, long:1.6}[S.trails], f60 = dt*60*A.tempo;
+  const calmFade = 2.2 - 1.2*A.E;                                       // trails die out ~2x faster in calm parts
+  // Wave has no trails at all (decay 0). Before, 0 - 0.02 raised to a power gave NaN, which some GPUs turn into ghost images.
+  const decay = fb.decay <= 0.02 ? 0 : fb.keep ? Math.pow(fb.decay - 0.02, dt*60*calmFade) : (tr === 0 ? 0 : Math.pow(Math.min(0.93, fb.decay - 0.2 + (tr-1)*0.16), dt*60*calmFade));
+  gl.uniform1f(PC.u.uWarp, ((fb.warp||0)*L[2]*1.3 + S.trip*L[2]*1.0)*A.E);
+  gl.uniform1f(PC.u.uHue, ((fb.hue||0) + S.trip*0.0015)*L[1]*1.4*A.E*f60);
+  gl.uniform1f(PC.u.uTime, C[2]*1.5);
+  gl.uniform2f(PC.u.uRes, w, h);
+  gl.uniform2f(PC.u.uShift, fb.shift[0]*L[1]*1.3*f60, fb.shift[1]*(L[0]*0.7 + L[2]*0.9)*f60);
+  gl.uniform1f(PC.u.uZoom, 1 + ((fb.zoom-1)*L[0]*1.5*A.E + H[0]*0.005*A.E)*f60);
+  gl.uniform1f(PC.u.uRot, (fb.rot*L[1]*1.6*A.E)*f60);
+  gl.uniform1f(PC.u.uDecay, decay);
+  gl.uniform1f(PC.u.uAberr, (H[0]*0.004 + H[2]*0.002)*A.E);
+  gl.uniform1f(PC.u.uFlash, S.flash === 'on' ? H[0]*H[0]*0.05*A.E : 0);
+  gl.uniform3fv(PC.u.uFlashCol, pic.pal[1]);
+  gl.uniform1f(PC.u.uRed, S.peakred === 'on' ? A.red : 0);
+  gl.uniform1f(PC.u.uAggr, S.aggcolor === 'on' ? (A.aggr || 0) : 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, dst.t); gl.generateMipmap(gl.TEXTURE_2D);
+
+  // 3. bloom to screen
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0,0,W,Hh);
+  gl.useProgram(PD.p);
+  gl.uniform2f(PD.u.uRes, W, Hh); gl.uniform1f(PD.u.uBloom, (0.15 + L[0]*0.22)*A.E);
+  gl.uniform1f(PD.u.uExpo, 0.1 + 0.9*Math.pow(A.Eg || 0, 1.3));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  targets.i = 1 - targets.i;
+}
+
+// ---------- UI behaviour ----------
+let idleTimer;
+function wake(){
+  document.body.classList.remove('hidden-ui');
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => { if(srcKind && picsheet.hidden && setsheet.hidden && !TEACH.on) document.body.classList.add('hidden-ui'); }, 3500);
+}
+['pointermove','pointerdown','keydown','touchstart'].forEach(e => window.addEventListener(e, wake, {passive:true}));
+window.addEventListener('keydown', e => {
+  if(e.target.tagName === 'INPUT') return;
+  if(e.key === 'ArrowRight') selectPic(picIndex+1);
+  else if(e.key === 'ArrowLeft') selectPic(picIndex-1);
+  else if(TEACH.on && /^[0-9]$/.test(e.key)){ setTeach(e.key === '0' ? 10 : +e.key); }
+  else if(/^[1-9]$/.test(e.key)){ styleByPic[PICS[picIndex].id] = STYLES[+e.key-1].id; save(); renderStyles(); updateHud(); }
+  else if(e.key === 'f' || e.key === 'F') toggleFs();
+  else if(e.key === 'Escape'){ picsheet.hidden = true; setsheet.hidden = true; }
+});
+function toggleFs(){
+  if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+  else document.documentElement.requestFullscreen().catch(()=>toast("Full screen isn't available here. Use the offline copy for full screen.", 5000));
+}
+document.getElementById('fs').onclick = toggleFs;
+
+const chsEl = document.getElementById('chs');
+meterEls = CH_NAMES.map((nm, c) => {
+  const box = document.createElement('div'); box.className = 'ch' + (c === 10 ? ' sub' : ''); box.title = c === 10 ? '.1 subwoofer (20-80 Hz)' : nm + ' Hz band';
+  const b = document.createElement('b'), i = document.createElement('i'), sp = document.createElement('span');
+  sp.textContent = nm; b.appendChild(i); box.append(b, sp); chsEl.appendChild(box);
+  return {box, fill:i};
+});
+bpmEl = document.getElementById('m-bpm'); energyEl = document.getElementById('m-energy');
+// ---------- Teach energy ----------
+// While a track plays (Demo track or your own Music file), move the slider (or press 1-9, 0 = 10) to say how much
+// energy the music has right now. Each song gets its own curve. The page also saves what it measured in the sound
+// at the same moments, so Claude can learn the link between the sound and your energy across songs.
+const TEACH = {on:false, step:0.5, key:null, name:'', v:null, auto:null, use:true, dirty:false, db:null, lastIdx:-1,
+  feat:null, acc:{i:-1, n:0, rms:0, ch:new Float32Array(11), fl:new Float32Array(11)}};
+let curName = 'Demo track';
+function songKey(){
+  if(!curAudio) return null;
+  if(srcKind === 'demo') return 'demo';
+  const d = isFinite(curAudio.duration) ? Math.round(curAudio.duration) : 0;
+  return ('f-' + curName.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_\-]+/g, '-').slice(0, 80) + '-' + d).replace(/-+/g, '-');
+}
+function teachLen(){ return curAudio && isFinite(curAudio.duration) ? Math.ceil(curAudio.duration/TEACH.step) + 1 : 1200; }
+function blank(n){ return new Float32Array(n).fill(-1); }
+function ensureTeach(){
+  const n = teachLen();
+  const grow = a => { if(a && a.length >= n) return a; const b = blank(n); if(a) b.set(a.subarray(0, Math.min(n, a.length))); return b; };
+  TEACH.v = grow(TEACH.v); TEACH.auto = grow(TEACH.auto);
+  if(!TEACH.feat || TEACH.feat.rms.length < n){
+    const f = {rms:new Float32Array(n).fill(-999), ch:blank(n*11), fl:blank(n*11)};
+    if(TEACH.feat){ f.rms.set(TEACH.feat.rms.subarray(0, Math.min(n, TEACH.feat.rms.length))); f.ch.set(TEACH.feat.ch.subarray(0, Math.min(n*11, TEACH.feat.ch.length))); f.fl.set(TEACH.feat.fl.subarray(0, Math.min(n*11, TEACH.feat.fl.length))); }
+    TEACH.feat = f;
+  }
+}
+function setUseButton(){ const b = document.getElementById('useTaught'); b.classList.toggle('on', TEACH.use); b.textContent = TEACH.use ? 'Using my energy' : 'Using automatic energy'; }
+// switch to the curve of the song that is playing now
+async function loadTeach(){
+  const key = songKey(); if(!key || key === TEACH.key) return;
+  if(TEACH.key && TEACH.dirty) await saveTeach();
+  TEACH.key = key; TEACH.name = srcKind === 'demo' ? 'Demo track' : curName;
+  TEACH.v = null; TEACH.auto = null; TEACH.feat = null; TEACH.use = true; TEACH.lastIdx = -1; TEACH.acc.i = -1;
+  try {
+    const saved = JSON.parse(localStorage.getItem(key === 'demo' ? 'nocturne-energy' : 'nocturne-energy-' + key) || 'null');
+    if(saved && saved.v){ TEACH.v = Float32Array.from(saved.v); TEACH.use = saved.use !== false; }
+  } catch(e){}
+  if(TEACH.db){
+    try { const snap = await TEACH.db.doc('energy/' + key).get();
+      if(snap.exists && TEACH.key === key){ const d = snap.data();
+        if(d && Array.isArray(d.v)){ TEACH.v = Float32Array.from(d.v); TEACH.use = d.use !== false; }
+        if(d && d.feat && Array.isArray(d.feat.rms)){ TEACH.feat = {rms:Float32Array.from(d.feat.rms, x => x === null ? -999 : x), ch:Float32Array.from(d.feat.ch), fl:Float32Array.from(d.feat.fl)}; }
+      } } catch(e){}
+  }
+  setUseButton(); ensureTeach();
+}
+function taughtEnergy(){
+  if(!TEACH.use || TEACH.on || !curAudio || !TEACH.v || TEACH.key !== songKey()) return -1;
+  // smoothed: a gentle ~4 s average of your curve around this moment, so it glides instead of stepping
+  const c = curAudio.currentTime/TEACH.step; let sw = 0, sv = 0;
+  for(let d=-4; d<=4; d++){ const v = TEACH.v[Math.round(c) + d]; if(v >= 0){ const g = Math.exp(-0.5*(d/1.5)*(d/1.5)); sw += g; sv += g*v; } }
+  return sw > 0.5 ? sv/sw/10 : -1;
+}
+function recordAuto(){
+  if(!curAudio || !srcKind) return;
+  if(TEACH.key !== songKey()){ loadTeach(); return; }
+  ensureTeach();
+  const i = Math.floor(curAudio.currentTime/TEACH.step);
+  TEACH.auto[i] = A.autoE;
+  // what the page hears in this half second: loudness (dB) and each of the 11 channels' level and attack
+  if(!curAudio.paused){
+    const ac = TEACH.acc;
+    if(ac.i !== i){
+      if(ac.i >= 0 && ac.n > 0 && ac.i < TEACH.feat.rms.length){
+        TEACH.feat.rms[ac.i] = Math.round(ac.rms/ac.n*10)/10;
+        for(let c=0;c<11;c++){ TEACH.feat.ch[ac.i*11+c] = Math.round(ac.ch[c]/ac.n*255); TEACH.feat.fl[ac.i*11+c] = Math.round(ac.fl[c]/ac.n*2550); }
+      }
+      ac.i = i; ac.n = 0; ac.rms = 0; ac.ch.fill(0); ac.fl.fill(0);
+    }
+    let s2 = 0; for(let k=0;k<tdata.length;k+=4){ const x = (tdata[k]-128)/128; s2 += x*x; }
+    ac.rms += 10*Math.log10(s2/(tdata.length/4) + 1e-9); ac.n++;
+    for(let c=0;c<11;c++){ ac.ch[c] += CHS.e[c]; ac.fl[c] += CHS.f[c]; }
+    TEACH.dirty = TEACH.dirty || !!TEACH.db;
+  }
+  if(TEACH.on && !curAudio.paused){
+    const val = parseFloat(document.getElementById('teachr').value);
+    if(TEACH.lastIdx >= 0 && i > TEACH.lastIdx && i - TEACH.lastIdx < 6){ for(let k=TEACH.lastIdx+1; k<=i; k++) TEACH.v[k] = val; }
+    else TEACH.v[i] = val;
+    TEACH.lastIdx = i; TEACH.dirty = true;
+    A.E = val/10;                                         // while teaching, the visuals follow your slider
+  } else TEACH.lastIdx = -1;
+}
+function setTeach(val){ const r = document.getElementById('teachr'); r.value = val; document.getElementById('teachv').textContent = Math.round(val*10); }
+document.getElementById('teachr').addEventListener('input', e => document.getElementById('teachv').textContent = Math.round(e.target.value*10));
+const teachMsg = m => document.getElementById('teachMsg').textContent = m;
+document.getElementById('teachBtn').onclick = () => {
+  TEACH.on = !TEACH.on; loadTeach(); ensureTeach();
+  document.getElementById('teachBtn').classList.toggle('on', TEACH.on);
+  document.getElementById('teach').hidden = !TEACH.on;
+  teachMsg(TEACH.on ? 'Teaching: ' + (TEACH.name || '') + ' · move the slider (0–100) or press 1–9 for 10–90, 0 for 100' : '');
+};
+document.getElementById('useTaught').onclick = () => { TEACH.use = !TEACH.use; setUseButton(); TEACH.dirty = true; };
+let clearArmed = 0;
+document.getElementById('clearTaught').onclick = e => {
+  if(Date.now() - clearArmed > 3000){ clearArmed = Date.now(); e.target.textContent = 'Tap again to clear'; setTimeout(() => e.target.textContent = 'Clear', 3000); return; }
+  if(TEACH.v) TEACH.v.fill(-1); TEACH.dirty = true; e.target.textContent = 'Clear'; clearArmed = 0; teachMsg('Cleared this song');
+};
+document.getElementById('curve').addEventListener('click', e => {
+  if(!curAudio || !isFinite(curAudio.duration)) return;
+  const r = e.target.getBoundingClientRect(); curAudio.currentTime = (e.clientX - r.left)/r.width*curAudio.duration;
+});
+function drawCurve(){
+  const cv = document.getElementById('curve'); if(document.getElementById('teach').hidden) return;
+  const g = cv.getContext('2d'), W = cv.width, H = cv.height; g.clearRect(0,0,W,H);
+  if(!curAudio || !isFinite(curAudio.duration) || !TEACH.v) return;
+  ensureTeach(); const n = Math.ceil(curAudio.duration/TEACH.step);
+  const line = (arr, color, wdt, scale) => { g.strokeStyle = color; g.lineWidth = wdt; g.beginPath(); let pen = false;
+    for(let i=0;i<n;i++){ const v = arr[i]; const x = i/n*W; if(v < 0){ pen = false; continue; } const y = H - 3 - Math.min(1, v/scale)*(H-6); if(pen) g.lineTo(x,y); else { g.moveTo(x,y); pen = true; } } g.stroke(); };
+  line(TEACH.auto, 'rgba(160,170,185,.55)', 1, 1);   // automatic energy is 0..1
+  line(TEACH.v, '#ff6a2b', 2, 10);                    // your energy is 0..10
+  const px = curAudio.currentTime/curAudio.duration*W; g.fillStyle = '#fff'; g.fillRect(px-1, 0, 2, H);
+}
+// save: in this browser, and to the page's shared store so Claude can read it
+async function saveTeach(){
+  if(!TEACH.dirty || !TEACH.v || !TEACH.key) return; TEACH.dirty = false;
+  const key = TEACH.key, r1 = x => x < 0 ? -1 : Math.round(x*10)/10;
+  const arr = Array.from(TEACH.v, r1);
+  try { localStorage.setItem(key === 'demo' ? 'nocturne-energy' : 'nocturne-energy-' + key, JSON.stringify({v:arr, use:TEACH.use})); } catch(e){}
+  if(TEACH.db){
+    const f = TEACH.feat, doc = {name:TEACH.name, step:TEACH.step, v:arr, use:TEACH.use, updated:Date.now(),
+      dur: curAudio && isFinite(curAudio.duration) ? Math.round(curAudio.duration) : 0};
+    if(f) doc.feat = {rms:Array.from(f.rms, x => x <= -998 ? null : Math.round(x*10)/10), ch:Array.from(f.ch, x => Math.round(x)), fl:Array.from(f.fl, x => Math.round(x))};
+    try { await TEACH.db.doc('energy/' + key).set(doc); if(TEACH.on) teachMsg('Saved · Claude can read it'); }
+    catch(e){ if(TEACH.on) teachMsg('Saved in this browser'); }
+  }
+}
+setInterval(drawCurve, 200);
+setInterval(() => { const anyTaught = TEACH.v && TEACH.v.some(x => x >= 0); if(anyTaught) saveTeach(); else TEACH.dirty = TEACH.dirty && !!TEACH.on; }, 4000);
+(async () => {
+  try { const db = window.claude && await window.claude.use('db'); if(db) TEACH.db = db; } catch(e){}
+})();
+
+// seek bar for the demo track and music files
+const seekEl = document.getElementById('seek'), seekr = document.getElementById('seekr'), tcur = document.getElementById('tcur'), tdur = document.getElementById('tdur');
+let seeking = false;
+const fmt = t => { t = Math.max(0, Math.floor(t || 0)); return Math.floor(t/60) + ':' + String(t%60).padStart(2,'0'); };
+seekr.addEventListener('input', () => { seeking = true; if(curAudio && isFinite(curAudio.duration)) tcur.textContent = fmt(seekr.value/1000*curAudio.duration); });
+seekr.addEventListener('change', () => { if(curAudio && isFinite(curAudio.duration)) curAudio.currentTime = seekr.value/1000*curAudio.duration; seeking = false; });
+(function(){
+  const bar = document.querySelector('.bar');
+  const setMin = m => { bar.classList.toggle('min', m); try { localStorage.setItem('nocturne-min', m ? '1' : ''); } catch(e){} };
+  try { if(localStorage.getItem('nocturne-min')) bar.classList.add('min'); } catch(e){}
+  document.getElementById('minBtn').onclick = e => { e.stopPropagation(); setMin(true); };
+  document.getElementById('maxBtn').onclick = e => { e.stopPropagation(); setMin(false); };
+})();
+document.getElementById('strs').addEventListener('click', e => { const b = e.target.closest('button'); if(!b) return; S.strings = +b.dataset.n; save(); renderStyles(); });
+function syncPlay(){ const b = document.getElementById('playp'), pa = !curAudio || curAudio.paused; b.textContent = pa ? '▶' : '❚❚'; b.setAttribute('aria-label', pa ? 'Play' : 'Pause'); }
+document.getElementById('playp').onclick = () => { if(!curAudio) return; if(curAudio.paused){ ensureCtx(); curAudio.play().catch(()=>{}); } else curAudio.pause(); setTimeout(syncPlay, 50); };
+setInterval(syncPlay, 500);
+document.getElementById('back10').onclick = () => { if(curAudio) curAudio.currentTime = Math.max(0, curAudio.currentTime - 10); };
+document.getElementById('fwd10').onclick = () => { if(curAudio && isFinite(curAudio.duration)) curAudio.currentTime = Math.min(curAudio.duration - 0.5, curAudio.currentTime + 10); };
+setInterval(() => {
+  const ok = !!(curAudio && isFinite(curAudio.duration) && curAudio.duration > 0);
+  seekEl.hidden = !ok;
+  if(!ok) return;
+  tdur.textContent = fmt(curAudio.duration);
+  if(!seeking){ seekr.value = Math.round(curAudio.currentTime/curAudio.duration*1000); tcur.textContent = fmt(curAudio.currentTime); }
+}, 250);
+renderSettings();
+selectPic(picIndex);
+requestAnimationFrame(frame);
+wake();
+</script>
