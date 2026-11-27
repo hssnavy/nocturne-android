@@ -1,10 +1,16 @@
 package com.nocturne.visualizer
 
 import android.content.Context
+import kotlin.math.max
 
 /** The same settings as the web page, saved on the phone. */
 object Settings {
-    @Volatile var sens = 1.1f
+    @Volatile var sens = 1.1f               // worked out from the dial: 1.1 x dialX(sv)
+    @Volatile var sv = 5f                   // Sensitivity dial 0-10, 5 = normal
+    @Volatile var svL = 5f; @Volatile var svM = 5f; @Volatile var svH = 5f   // lows / mids / highs dials
+    /** dial 0-10 -> multiplier: 5 = x1, every 2.5 doubles or halves it (0 = a quarter, 10 = four times) */
+    fun dialX(v: Float): Float = Math.pow(2.0, ((v - 5) / 2.5).toDouble()).toFloat()
+    fun applySens() { sens = 1.1f * dialX(sv) }
     @Volatile var response = "instant"      // smooth / fast / instant
     @Volatile var bars = 48
     @Volatile var peaks = "fast"            // off / slow / fast
@@ -24,7 +30,9 @@ object Settings {
 
     fun load(ctx: Context) {
         val p = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
-        sens = p.getFloat("sens", sens); response = p.getString("response", response)!!; bars = p.getInt("bars", bars)
+        sens = p.getFloat("sens", sens)
+        sv = if (p.contains("sv")) p.getFloat("sv", 5f) else (5 + 2.5f * (Math.log(max(0.28f, sens) / 1.1) / Math.log(2.0)).toFloat()).coerceIn(0f, 10f)
+        svL = p.getFloat("svL", 5f); svM = p.getFloat("svM", 5f); svH = p.getFloat("svH", 5f); applySens(); response = p.getString("response", response)!!; bars = p.getInt("bars", bars)
         peaks = p.getString("peaks", peaks)!!; layout = p.getString("layout", layout)!!; bass = p.getString("bass", bass)!!
         seg = p.getBoolean("seg", seg); trip = p.getFloat("trip", trip); aggcolor = p.getBoolean("aggcolor", aggcolor)
         peakred = p.getBoolean("peakred", peakred); color = p.getString("color", color)!!; trails = p.getString("trails", trails)!!
@@ -34,14 +42,14 @@ object Settings {
 
     fun save(ctx: Context) {
         ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
-            .putFloat("sens", sens).putString("response", response).putInt("bars", bars).putString("peaks", peaks)
+            .putFloat("sens", sens).putFloat("sv", sv).putFloat("svL", svL).putFloat("svM", svM).putFloat("svH", svH).putString("response", response).putInt("bars", bars).putString("peaks", peaks)
             .putString("layout", layout).putString("bass", bass).putBoolean("seg", seg).putFloat("trip", trip)
             .putBoolean("aggcolor", aggcolor).putBoolean("peakred", peakred).putString("color", color).putString("trails", trails)
             .putBoolean("flash", flash).putBoolean("shake", shake).putString("quality", quality).putInt("strings", strings).putString("tvRes", tvRes).apply()
     }
 
     fun reset() {
-        sens = 1.1f; response = "instant"; bars = 48; peaks = "fast"; layout = "bottom"; bass = "left"; seg = false; trip = 0.5f
+        sv = 5f; svL = 5f; svM = 5f; svH = 5f; applySens(); response = "instant"; bars = 48; peaks = "fast"; layout = "bottom"; bass = "left"; seg = false; trip = 0.5f
         aggcolor = true; peakred = true; color = "picture"; trails = "short"; flash = true; shake = true; quality = "auto"; strings = 3
     }
 }

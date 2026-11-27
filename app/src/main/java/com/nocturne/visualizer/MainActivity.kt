@@ -305,6 +305,7 @@ class MainActivity : Activity() {
     // ---------------- settings ----------------
 
     private var settingsView: View? = null
+    private var bandsOpen = false
     private fun showSettings() {
         if (settingsView != null) return
         val root = window.decorView.findViewById<FrameLayout>(android.R.id.content)
@@ -325,22 +326,34 @@ class MainActivity : Activity() {
             box.addView(scroll(r), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) })
         }
         val S = Settings
-        // sensitivity slider
+        // sensitivity: an overall dial 0-10 (5 = normal); the arrow opens a dial each for the lows, mids and highs
         run {
-            val box = section("Sensitivity", "Raise it for quiet music or the microphone.")
-            val v = TextView(this).apply { setTextColor(fg); textSize = 12f; typeface = Typeface.MONOSPACE; text = "%.2f".format(S.sens) }
-            val sb = SeekBar(this).apply {
-                max = 270; progress = ((S.sens - 0.3f) * 100).toInt()
-                progressTintList = ColorStateList.valueOf(accent); thumbTintList = ColorStateList.valueOf(accent)
-                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                    override fun onProgressChanged(sb: SeekBar, p: Int, u: Boolean) { S.sens = 0.3f + p / 100f; v.text = "%.2f".format(S.sens) }
-                    override fun onStartTrackingTouch(sb: SeekBar) {}
-                    override fun onStopTrackingTouch(sb: SeekBar) { Settings.save(this@MainActivity) }
-                })
+            val box = section("Sensitivity", "0 to 10, 5 is normal. Raise it for quiet music or the microphone. The arrow opens lows, mids and highs.")
+            fun dial(name: String?, get: () -> Float, set: (Float) -> Unit): LinearLayout {
+                val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                if (name != null) r.addView(TextView(this).apply { text = name; textSize = 12f; setTextColor(muted) }, LinearLayout.LayoutParams(dp(52), ViewGroup.LayoutParams.WRAP_CONTENT))
+                val v = TextView(this).apply { setTextColor(fg); textSize = 12f; typeface = Typeface.MONOSPACE; text = "%.1f".format(get()) }
+                val sb = SeekBar(this).apply {
+                    max = 100; progress = (get() * 10).toInt()
+                    progressTintList = ColorStateList.valueOf(accent); thumbTintList = ColorStateList.valueOf(accent)
+                    setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                        override fun onProgressChanged(sb: SeekBar, p: Int, u: Boolean) { set(p / 10f); S.applySens(); v.text = "%.1f".format(get()) }
+                        override fun onStartTrackingTouch(sb: SeekBar) {}
+                        override fun onStopTrackingTouch(sb: SeekBar) { Settings.save(this@MainActivity) }
+                    })
+                }
+                r.addView(sb, LinearLayout.LayoutParams(dp(if (name == null) 240 else 188), ViewGroup.LayoutParams.WRAP_CONTENT)); r.addView(v)
+                return r
             }
-            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            r.addView(sb, LinearLayout.LayoutParams(dp(240), ViewGroup.LayoutParams.WRAP_CONTENT)); r.addView(v)
-            box.addView(r)
+            val top = dial(null, { S.sv }, { S.sv = it })
+            val bands = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = if (bandsOpen) View.VISIBLE else View.GONE; setPadding(0, dp(4), 0, 0) }
+            bands.addView(dial("Lows", { S.svL }, { S.svL = it })); bands.addView(dial("Mids", { S.svM }, { S.svM = it })); bands.addView(dial("Highs", { S.svH }, { S.svH = it }))
+            val arrow = TextView(this).apply {
+                text = if (bandsOpen) "▾" else "▸"; textSize = 18f; setTextColor(fg); setPadding(dp(14), dp(2), dp(14), dp(2))
+                setOnClickListener { bandsOpen = !bandsOpen; bands.visibility = if (bandsOpen) View.VISIBLE else View.GONE; text = if (bandsOpen) "▾" else "▸" }
+            }
+            top.addView(arrow)
+            box.addView(top); box.addView(bands)
         }
         choice("Wave strings", listOf(1 to "1", 3 to "3", 5 to "5", 7 to "7"), { S.strings }, { S.strings = it }, "How many strings share the spectrum, 20 Hz to 20 kHz.")
         choice("Response", listOf("smooth" to "Smooth", "fast" to "Fast", "instant" to "Instant"), { S.response }, { S.response = it })

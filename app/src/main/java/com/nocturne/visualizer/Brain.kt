@@ -29,15 +29,18 @@ class Spectrum(val n: Int) {
     private val re = FloatArray(n); private val im = FloatArray(n)
     val samples = FloatArray(n)
     val bytes = IntArray(n / 2)
-    var subPower = 0.0          // power under 80 Hz, unclipped (loud EDM sub sits above the byte scale's ceiling)
+    var subPower = 0.0          // the kick's thump, 40-120 Hz, unclipped (loud EDM sub sits above the byte scale's ceiling)
+    var clickPower = 0.0        // the kick beater's click, 2-5 kHz
 
     fun compute(sampleRate: Int) {
         for (i in 0 until n) { re[i] = samples[i] * win[i]; im[i] = 0f }
         fft.transform(re, im)
         val hz = sampleRate.toDouble() / n
-        subPower = 0.0
+        subPower = 0.0; clickPower = 0.0
         var i = 1
-        while (i * hz < 80) { val m = sqrt((re[i] * re[i] + im[i] * im[i]).toDouble()) / n; subPower += m * m; i++ }
+        while (i * hz < 120) { if (i * hz >= 40) { val m = sqrt((re[i] * re[i] + im[i] * im[i]).toDouble()) / n; subPower += m * m }; i++ }
+        i = ceil(2000 / hz).toInt()
+        while (i * hz < 5000 && i < n / 2) { val m = sqrt((re[i] * re[i] + im[i] * im[i]).toDouble()) / n; clickPower += m * m; i++ }
         for (k in 0 until n / 2) {
             val m0 = sqrt((re[k] * re[k] + im[k] * im[k]).toDouble()) / n
             mag[k] = smoothing * mag[k] + (1 - smoothing) * m0; val m = mag[k]
@@ -109,7 +112,7 @@ class Brain(ctx: Context) {
     private val Lsd = floatArrayOf(7.46035f, 5.27088f, 2.51173f, 0.00361f, 0.00503f)
     private var Lx: FloatArray? = null; private var quiet = 0; private var newSong = false; var songAge = 0f; private var tempoReset = false; @Volatile var songStarted = false; private val tHist = ArrayDeque<FloatArray>(); private var locked = 0f; private var Lxf: FloatArray? = null; private var Lpk = 0f; private var LkickL = 0f; private var LE = -1f
     private val Lprev = IntArray(512); private var primed = false; private var pos = -1L
-    private val subH = ArrayDeque<Double>(); private var subPk = Double.NaN; private var subAvg = Double.NaN; private var subT = 0
+    private val subH = ArrayDeque<Double>(); private val clH = ArrayDeque<Double>(); private var subPk = Double.NaN; private var subAvg = Double.NaN; private var subT = 0
     // tempo
     private val tGrid = FloatArray(800); private val tLow = FloatArray(800); private var tPos = 0; private var tFilled = 0; private var tHops = 0; private var tDisagree = 0
     private val tPrev = IntArray(512)
@@ -191,8 +194,14 @@ class Brain(ctx: Context) {
                 subAvg = if (subAvg.isNaN()) sdb else subAvg + (sdb - subAvg) * 0.01
                 var lo = Double.MAX_VALUE; for (j in 0 until subH.size - 1) lo = min(lo, subH[j])
                 val rise = sdb - lo
-                if (subH.size >= 4 && rise > 8 && gate > 0.5f && sdb > subAvg + 3 && sdb > subPk - 6 && subT > max(25.0, if (bpm > 0) 0.7 * 6000 / bpm else 0.0)) {
-                    val ks = min(1.0, 0.65 + (rise - 8) / 14).toFloat(); subT = 0
+                // the click: 2-5 kHz jumping at the same moment makes the kick surer (it may then be a smaller thump)
+                val cdb = 10 * log10(hopSpec.clickPower + 1e-14)
+                clH.addLast(cdb); if (clH.size > 6) clH.removeFirst()
+                var clo = Double.MAX_VALUE; for (j in 0 until clH.size - 1) clo = min(clo, clH[j])
+                val click = clH.size >= 4 && cdb - clo > 6
+                val need = if (click) 5.5 else 8.0
+                if (subH.size >= 4 && rise > need && gate > 0.5f && sdb > subAvg + (if (click) 2 else 3) && sdb > subPk - 6 && subT > max(25.0, if (bpm > 0) 0.7 * 6000 / bpm else 0.0)) {
+                    val ks = min(1.0, 0.65 + (rise - need) / 14 + (if (click) 0.1 else 0.0)).toFloat(); subT = 0
                     core = max(core, ks)
                     hit[0] = max(hit[0], ks * min(1f, 0.4f + Eg))
                     lastHit[0] = now; kickT = now
@@ -476,17 +485,26 @@ class Brain(ctx: Context) {
         waveK += ((6 + 30 * min(1.5f, lev[2])) - waveK) * min(1f, dt * 5)
     }
 
+    /** String position (0-1, a third each for lows, mids, highs) -> place on the 20 Hz-20 kHz tone map (borders 250 Hz, 4 kHz). */
+    private fun bandPos(u0: Double): Double {
+        val P = doubleArrayOf(0.0, 0.3656, 0.767, 1.0); val u = u0.coerceIn(0.0, 1.0)
+        val j = min(2, floor(u * 3).toInt()); return P[j] + (P[j + 1] - P[j]) * (u * 3 - j)
+    }
+
     // ---------------- the Wave's strings ----------------
     private fun strings(dt: Float, now: Double) {
         val NS = strings
         if (NS != strN) { strN = NS; strL.fill(0f); strS.fill(0f); strSt.fill(0f); strP.fill(0f); strHit.fill(0f); strAge.fill(9f); strLast.fill(0.0); strHist.forEach { it.clear() }; strPrev.fill(0f); strPk.fill(-60f); strWK.fill(8f); strAct.fill(0f); strGlow.fill(0f); strCAvg.fill(0.5f); strRest.fill(0f) }
         for (b in 0 until NS) {
             // its part of 20 Hz-20 kHz: an equal share, overlapping its neighbours a little (7.5% each side)
-            val i0 = max(0, floor(TONE_N * (b - 0.075) / NS).toInt()); val i1 = min(TONE_N, ceil(TONE_N * (b + 1.075) / NS).toInt())
+            // lows 20-250 Hz, mids 250 Hz-4 kHz, highs 4-20 kHz (with 3 strings one each; 5 or 7 share them out)
+            val i0 = max(0, floor(TONE_N * bandPos((b - 0.075) / NS)).toInt()); val i1 = min(TONE_N, ceil(TONE_N * bandPos((b + 1.075) / NS)).toInt())
             var fl = 0f; var dmax = -200f; var cw = 0f; var cs = 0f
             for (i in i0 until i1) { val v = toneVs[i]; fl += max(0f, v - strPrev[i]); if (toneDb[i] > dmax) dmax = toneDb[i]; cw += v * (i - i0); cs += v }
             val fr = if (NS > 1) b.toFloat() / (NS - 1) else 0.5f
-            val g = 1 + 0.2f * min(1f, fr * 2) + 0.3f * max(0f, fr * 2 - 1)
+            // the same sensitivity for every string, set by its band's dial (lows, mids or highs)
+            val uc = (b + 0.5f) / NS
+            val g = Settings.dialX(if (uc < 1f / 3) Settings.svL else if (uc < 2f / 3) Settings.svM else Settings.svH)
             // 1. amplitude: how loud its part is now against its own loudest lately
             strPk[b] = max(dmax, max(strPk[b] - dt * 0.5f * gate, -80f))
             val lvl = if (live && dmax > -150) gate * max(0f, min(1.2f, (dmax - (strPk[b] - 30)) / 30)) else 0f
