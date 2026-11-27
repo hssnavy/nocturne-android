@@ -150,12 +150,17 @@ void main(){
       float dl = 2.5/256.;
       float tc = max(0., tl - 0.5*(tnS(tp - dl) + tnS(tp + dl)));
       y += (tc*1.5 + tl*0.25)*(0.03 + 0.05*uEnergy)*(1. + 0.7*fr)*envR;
+      float calm = 0.15 + 0.85*smoothstep(0.1, 0.75, uE);          // low energy: the body of the strings calms down a lot
+      y *= calm;
+      // ...but a single hit in a calm moment still shows clearly, even MORE when the string is resting:
+      // every drum hit in its part throws the whole string and sends a pulse in from the right
+      float boost = 1. + 1.6*(1. - calm);
       float pd = (Xr - age*2.2)/0.09;                               // the beat pulse, running in from the right
-      float pulse = hit*exp(-pd*pd)*(0.05 + 0.07*uEnergy)*envR;
+      float pulse = hit*exp(-pd*pd)*(0.05 + 0.06*uEnergy)*boost*envR;
       y += pulse*(mod(fk, 2.) < 0.5 ? 1. : -1.);
+      y += hit*(sin(Xr*w*1.3 - flow*1.4 + fk)*0.7 + sin(Xr*w*2.7 - flow + fk*0.7)*0.3)*(0.025 + 0.03*uEnergy)*boost*envR;
       float kd = (Xr - uKAge*2.6)/0.14;                             // the kick drum's own wave, rolling in from the right
-      y -= kick*exp(-kd*kd)*(0.05 + 0.08*uEnergy)*envR;
-      y *= 0.15 + 0.85*smoothstep(0.1, 0.75, uE);                  // low energy: the strings calm down a lot, not quite flat (sensitivity unchanged)
+      y -= kick*exp(-kd*kd)*(0.05 + 0.08*uEnergy)*(0.6 + 0.4*boost)*envR;
       y += (fk - (n - 1.)*0.5)*0.012*min(1., 3./n);                 // strings sit just apart
       float d = abs(q.y - y);
       float thick = 0.0013 + tl*0.0022 + hit*0.0022 + tc*0.002;

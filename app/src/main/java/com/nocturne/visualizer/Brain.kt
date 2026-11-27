@@ -491,13 +491,17 @@ class Brain(ctx: Context) {
             val wkT = 7 * 4f.pow(fr) * (1 + 0.8f * cRel) * (0.8f + 0.4f * cen)
             strWK[b] += (wkT - strWK[b]) * min(1f, dt * 8)
             // 3. right-to-left movement: how busy its part is
-            val f = if (live) fl / (i1 - i0) else 0f
-            strAct[b] += (min(1.5f, f * g * 14) - strAct[b]) * min(1f, dt * 4)
+            // onset strength: the biggest jumps in its part (top 8 bins), so small percussion that touches only part of
+            // the slice (hi-hats, shakers, rim clicks) still counts as a hit
+            var f = 0f
+            if (live) { val jumps = ArrayList<Float>(); for (i in i0 until i1) { val dv = toneVs[i] - strPrev[i]; if (dv > 0) jumps.add(dv) }
+                jumps.sortDescending(); for (q in 0 until min(8, jumps.size)) f += jumps[q]; f /= 8 }
+            strAct[b] += (min(1.5f, (fl / (i1 - i0)) * g * 14) - strAct[b]) * min(1f, dt * 4)
             strP[b] += dt * (0.6f + 0.6f * fr) * (0.08f + strAct[b] * 2.2f + strL[b] * 0.25f) * 1.8f
             // beat in its part
             val hs = strHist[b]; hs.addLast(f); if (hs.size > 45) hs.removeFirst()
             val (mean, sd) = meanSd(hs)
-            if (live && hs.size > 10 && f > mean + 1.4f * sd / g + 0.004f / g && now - strLast[b] > 110) {
+            if (live && hs.size > 10 && f > mean + 1.2f * sd / g + 0.02f / g && now - strLast[b] > 90) {
                 strHit[b] = max(strHit[b], min(1f, 0.55f + (f - mean) / (4 * sd + 1e-4f))); strAge[b] = 0f; strLast[b] = now
             }
             strHit[b] *= exp(-dt * (5 + 4 * fr)); strAge[b] += dt
