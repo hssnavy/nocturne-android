@@ -3,7 +3,8 @@ uniform sampler2D uTex, uSpec, uPeak, uWave, uTone, uToneS;
 uniform vec3 uPal0, uPal1, uPal2, uPal3;
 uniform vec2 uRes, uShake;
 // lows / mids / highs: smoothed level (1 ~ typical for this song), hits (0-1, transients), and their own clocks
-uniform float uLowA, uWaveK, uNStr, uCore, uKAge, uTravel, uSpeed, uSpin, uHyE; uniform float uStr[7]; uniform float uFlow[7]; uniform float uSHit[7]; uniform float uSAge[7]; uniform float uSWK[7];
+uniform float uBgT;
+uniform float uLowA, uWaveK, uNStr, uCore, uKAge, uTravel, uSpeed, uSpin, uHyE; uniform float uStr[7]; uniform float uFlow[7]; uniform float uSHit[7]; uniform float uSAge[7]; uniform float uSWK[7]; uniform float uSGlow[7];
 uniform float uLow, uMid, uHigh, uLowHit, uMidHit, uHighHit, uLowT, uMidT, uHighT;
 // 10-band equaliser channels (31 Hz ... 16 kHz) + the .1 sub channel (index 10)
 uniform float uCh[11]; uniform float uChHit[11];
@@ -99,10 +100,20 @@ void main(){
     col += step(0.45,h1)*(1.-smoothstep(0.,0.008,abs(r-pr)))*(1.-smoothstep(0.1,0.4,abs(fract(fract(ang/TAU)*180.)-0.5)))*pal(h1)*(uHigh*2.2 + uHighHit*1.5);
   }
   else if(uMode < 2.5){ // WAVE  ten sections, one per channel: 31 Hz on the left ... 16 kHz on the right; .1 sub lifts the whole line
-    float smoke = uEnergy*uEnergy*0.9 + uLowHit*0.15;                         // smoke grows with the song's energy
-    vec2 wv = vec2(fbm(q*1.6+vec2(uMidT*0.3,0.)), fbm(q*1.6+vec2(4.,uMidT*0.22))) - 0.5;
-    vec3 sm = textureLod(uTex, cover(q*0.6 + wv*(0.9 + uEnergy*0.4)), 5.).rgb;
-    col += sm*smoothstep(0.02, 0.12, luma(sm))*smoke*0.7;
+    // BACKGROUND (the strings are untouched): living smoke whose amount, drift, colour and shadows follow the energy.
+    // Calm: a faint, slow, cool haze. Rising energy: thicker smoke that drifts faster, warms in hue and casts deeper
+    // moving shadows; each kick puffs it a little.
+    float E = uEnergy;
+    float smoke = 0.16 + 1.3*E*E + uCore*0.3*E;
+    vec2 wv = vec2(fbm(q*1.6 + vec2(uBgT*0.5, 0.)), fbm(q*1.6 + vec2(4., uBgT*0.37))) - 0.5;
+    vec2 wv2 = vec2(fbm(q*0.8 - vec2(uBgT*0.23, 1.3)), fbm(q*0.8 + vec2(2.1, -uBgT*0.19))) - 0.5;   // a slower, deeper layer
+    vec3 sm = textureLod(uTex, cover(q*0.6 + wv*(0.8 + E*0.6)), 5.).rgb;
+    vec3 sm2 = textureLod(uTex, cover(q*0.35 + wv2*(0.6 + E*0.5) + 0.3), 6.).rgb;
+    vec3 bg = sm*smoothstep(0.02, 0.12, luma(sm))*0.7 + sm2*smoothstep(0.02, 0.12, luma(sm2))*0.35*(0.4 + E);
+    bg = hueRot(bg, sin(uBgT*0.11)*0.22 + E*0.3);                                // hue drifts, and shifts as energy rises
+    float sh = smoothstep(0.42, 0.72, fbm(q*1.2 + vec2(-uBgT*0.3, uBgT*0.12)));  // moving shadows
+    bg *= 1. - sh*(0.25 + 0.55*E);
+    col += bg*smoke;
     float X = q.x;
     float xe = clamp((x01 - 0.06)/0.88, 0., 1.);
     float bp = clamp(xe*10. - 0.5, 0., 9.);                       // channel under this point
@@ -124,24 +135,32 @@ void main(){
       float fr = n > 1.5 ? fk/(n - 1.) : 0.5;                       // 0 = lowest string, 1 = highest
       float hit = uSHit[k], age = uSAge[k];
       float kick = k == 0 ? uCore : 0.;                              // the kick drum lives in the lowest slice: only that string takes it
-      float amp = min(min(uStr[k]*(0.06 + 0.14*uEnergy), capE)*(1. - 0.3*fr)*(1. + 0.7*hit + 0.6*kick), 0.34);   // never off the screen
-      float tl = tnS((fk + (1. - x01))/n);                          // every tone of its slice, each against its own peak (low end at the right)
+      float amp = 0.85*min(min(uStr[k]*(0.06 + 0.14*uEnergy), capE)*(1. - 0.3*fr)*(1. + 0.7*hit + 0.6*kick), 0.34);   // never off the screen (overall 15% lower)
+      float s0 = max(0., (fk - 0.075)/n), s1 = min(1., (fk + 1.075)/n);   // its part of the spectrum (overlaps a little)
+      float tp = s0 + (1. - x01)*(s1 - s0);                        // low end of its part at the right
+      float tl = tnS(tp);
       float w = uSWK[k];                                            // its own wavelength (only its own frequencies change it)
       float flow = uFlow[k];
       float y = sin(Xr*w - flow + fk*2.1)*0.7 + sin(Xr*w*0.43 - flow*0.6 + fk*1.3)*0.3;
       y *= 0.3 + 0.95*tl;
       y += sin(Xr*(18. + fr*28.) - flow*1.7 + fk)*tl*0.22;
       y *= amp*envR;
+      // every tone as its own peak: a note that stands out from its neighbours lifts the string right at its frequency.
+      // Added on top (not multiplied by the wave), so a note can't vanish where the wave happens to cross the middle.
+      float dl = 2.5/256.;
+      float tc = max(0., tl - 0.5*(tnS(tp - dl) + tnS(tp + dl)));
+      y += (tc*1.5 + tl*0.25)*(0.03 + 0.05*uEnergy)*(1. + 0.7*fr)*envR;
       float pd = (Xr - age*2.2)/0.09;                               // the beat pulse, running in from the right
       float pulse = hit*exp(-pd*pd)*(0.05 + 0.07*uEnergy)*envR;
       y += pulse*(mod(fk, 2.) < 0.5 ? 1. : -1.);
       float kd = (Xr - uKAge*2.6)/0.14;                             // the kick drum's own wave, rolling in from the right
       y -= kick*exp(-kd*kd)*(0.05 + 0.08*uEnergy)*envR;
+      y *= 0.12 + 0.88*smoothstep(0.12, 0.75, uEnergy);             // low energy: the strings settle toward flat (sensitivity unchanged)
       y += (fk - (n - 1.)*0.5)*0.012*min(1., 3./n);                 // strings sit just apart
       float d = abs(q.y - y);
-      float thick = 0.0013 + tl*0.0022 + hit*0.0022;
+      float thick = 0.0013 + tl*0.0022 + hit*0.0022 + tc*0.002;
       vec3 c = mix(pal(0.08 + 0.84*fr), vec3(1.), clamp(tl*0.4 + hit*0.35, 0., 0.7));
-      col += c*(thick/(d+0.0022))*0.34*(0.35 + tl*0.8 + hit*0.5 + kick*0.35)*envR;
+      col += c*(thick/(d+0.0022))*0.34*(uSGlow[k] + tl*0.5)*envR;        // glow: its own loudness and hits, lifted by the song's energy
     }
   }
   else if(uMode < 3.5){ // TUNNEL  lows: forward travel + ring pulses · mids: twist · highs: shimmer stripes

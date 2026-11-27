@@ -200,7 +200,7 @@ class Renderer(private val ctx: Context, private val pics: List<Pic>, private va
         f1(PS, "uLowT", C[0]); f1(PS, "uMidT", C[1]); f1(PS, "uHighT", C[2])
         f1(PS, "uCore", b.core); f1(PS, "uKAge", if (b.kickT > 0) min(9.0, (now - b.kickT) / 1000).toFloat() else 9f)
         f1(PS, "uTravel", b.hsX); f1(PS, "uSpeed", b.hsV + b.hsB); f1(PS, "uSpin", b.hsSpin); f1(PS, "uHyE", b.hsE)
-        f1(PS, "uNStr", b.strings.toFloat()); fv(PS, "uStr", b.strL); fv(PS, "uFlow", b.strP); fv(PS, "uSHit", b.strHit); fv(PS, "uSAge", b.strAge); fv(PS, "uSWK", b.strWK)
+        f1(PS, "uNStr", b.strings.toFloat()); fv(PS, "uStr", b.strL); fv(PS, "uFlow", b.strP); fv(PS, "uSHit", b.strHit); fv(PS, "uSAge", b.strAge); fv(PS, "uSWK", b.strWK); fv(PS, "uSGlow", b.strGlow); f1(PS, "uBgT", b.bgT)
         f1(PS, "uWaveK", b.waveK)
         f1(PS, "uLowA", min(1.8f, L[0] + Hh[0] * 0.45f + b.chLev[10] * 0.35f))
         f1(PS, "uEnergy", b.Eg); f1(PS, "uInt", b.int_); f1(PS, "uAggr", b.aggr)
