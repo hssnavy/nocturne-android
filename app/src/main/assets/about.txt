@@ -15,4 +15,6 @@ STYLES: 10 styles share this analysis; energy sets how calm or aggressive, brigh
 • Radial: the solid ring beats only with the kick; the outer fragments follow the spectrum.
 • Light speed: a ship that starts at rest and speeds up with the song; kicks surge it.
 
+CAST TO TV: tap Cast to TV, pick your LG or Samsung TV and choose Allow on the TV the first time. The phone keeps listening and playing the music; the TV draws the visuals at its own resolution. Or type the address shown into the TV's web browser. Same Wi-Fi needed.
+
 LEARNING: each song leaves an anonymous record (sound features, energy, BPM, no audio), kept on the phone and uploaded when online, to improve future versions.

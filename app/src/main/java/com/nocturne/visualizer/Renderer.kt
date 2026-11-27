@@ -166,9 +166,17 @@ class Renderer(private val ctx: Context, private val pics: List<Pic>, private va
 
     override fun onDrawFrame(gl: GL10?) {
         if (!ready) return
+        synchronized(brain) { frame() }
+    }
+
+    /** When the phone last drew a frame; while casting with the screen off, the TV link runs the analysis instead. */
+    @Volatile var lastFrameN = 0L
+
+    private fun frame() {
         val nowN = System.nanoTime(); val now = nowN / 1e6
         val dt = if (last == 0L) 1f / 60 else min(0.1f, (nowN - last) / 1e9f); last = nowN
         brain.update(dt, now)
+        lastFrameN = nowN
         adapt(dt, now)
         val pi = picture.coerceIn(0, pics.size - 1); val si = style.coerceIn(0, STYLES.size - 1)
         if (pi != picLoaded) loadPicture(pi)

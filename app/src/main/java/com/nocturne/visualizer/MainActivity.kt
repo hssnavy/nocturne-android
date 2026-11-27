@@ -69,6 +69,9 @@ class MainActivity : Activity() {
     private var picIndex = 0
     private var screenShare = false
     private lateinit var shareBtn: TextView
+    private lateinit var castBtn: TextView
+    private var tvLink: TvLink? = null
+    private val tvCast by lazy { TvCast(this) }
     private val accent = Color.rgb(255, 106, 43)
     private val fg = Color.rgb(233, 237, 242)
     private val muted = Color.rgb(138, 147, 160)
@@ -196,7 +199,8 @@ class MainActivity : Activity() {
         styleButtons.clear()
         val styleRow = row(label("Style"))
         STYLES.forEachIndexed { i, s -> val b = pill(s.name) { setStyle(i) }; styleButtons.add(b); styleRow.addView(b, lp()) }
-        val r1 = row(prev, picName, next, pill("Settings") { showSettings() })
+        castBtn = pill("Cast to TV") { showCast() }
+        val r1 = row(prev, picName, next, pill("Settings") { showSettings() }, castBtn)
 
         sourceButtons["device"] = pill("This phone") { toggle("device") }
         sourceButtons["mic"] = pill("Microphone") { toggle("mic") }
@@ -376,6 +380,75 @@ class MainActivity : Activity() {
     private fun closeSettings() {
         val v = settingsView ?: return; settingsView = null
         v.animate().alpha(0f).setDuration(200).withEndAction { (v.parent as? ViewGroup)?.removeView(v) }.start()
+        showBar()
+    }
+
+    // ---------------- cast to TV (LG webOS, Samsung Tizen) ----------------
+
+    private var castView: View? = null
+    private fun link(): TvLink = tvLink ?: TvLink(this, brain, renderer).also { tvLink = it }
+    private fun showCast() {
+        if (castView != null) return
+        val l = link(); l.start()
+        val root = window.decorView.findViewById<FrameLayout>(android.R.id.content)
+        val shade = FrameLayout(this).apply { setBackgroundColor(Color.argb(225, 4, 5, 8)); alpha = 0f; isClickable = true }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(60), dp(20), dp(30)) }
+        val say = TextView(this).apply { textSize = 13f; setTextColor(fg); setPadding(0, 0, 0, dp(10)) }
+        val tvs = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        list.addView(TextView(this).apply { text = "Keep the phone and the TV on the same Wi-Fi. The phone listens and plays the music; the TV draws the visuals full screen at its own resolution."; textSize = 12f; setTextColor(muted); setPadding(0, 0, 0, dp(14)) })
+        list.addView(say); list.addView(tvs)
+        val found = HashSet<String>()
+        fun addTv(tv: Tv) {
+            if (!found.add(tv.ip)) return
+            val b = pill((if (tv.brand == "lg") "LG  ·  " else "Samsung  ·  ") + tv.name) {
+                say.text = "Connecting to ${tv.name}…"
+                Thread {
+                    val url = l.url()
+                    val err = if (url == null) "This phone isn't on Wi-Fi." else tvCast.open(tv, url) { m -> runOnUiThread { say.text = m } }
+                    runOnUiThread { say.text = err ?: "Casting to ${tv.name}. On the TV, press OK on the remote for full screen." }
+                }.start()
+            }
+            tvs.addView(b, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+        }
+        fun search() {
+            say.text = "Looking for TVs…"
+            Thread {
+                tvCast.discover { tv -> runOnUiThread { addTv(tv) } }
+                ui.postDelayed({ if (found.isEmpty()) say.text = "No TV found. Is the TV on, on the same Wi-Fi? You can also use the address below." else if (say.text.toString() == "Looking for TVs…") say.text = "Choose your TV:" }, 1800)
+            }.start()
+        }
+        val again = pill("Search again") { search() }
+        list.addView(again, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) })
+        // the fallback: type the address into the TV's web browser
+        val addr = TextView(this).apply { textSize = 20f; setTextColor(Color.WHITE); typeface = Typeface.MONOSPACE; setTextIsSelectable(true); setPadding(0, dp(6), 0, 0) }
+        list.addView(TextView(this).apply { text = "Or open the TV's web browser and type:"; textSize = 12f; setTextColor(muted); setPadding(0, dp(22), 0, 0) })
+        list.addView(addr)
+        val conn = TextView(this).apply { textSize = 12f; setTextColor(muted); setPadding(0, dp(14), 0, 0) }
+        list.addView(conn)
+        list.addView(pill("Stop casting") { tvLink?.stop(); tvLink = null; closeCast() },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(18) })
+        val upd = object : Runnable { override fun run() {
+            if (castView == null) return
+            addr.text = (tvLink?.url() ?: "Connect the phone to Wi-Fi").removePrefix("http://").removeSuffix("/")
+            val n = tvLink?.tvCount ?: 0
+            conn.text = if (n == 0) "No TV is showing Nocturne yet." else if (n == 1) "1 TV is showing Nocturne." else "$n TVs are showing Nocturne."
+            ui.postDelayed(this, 700)
+        } }
+        val sv = android.widget.ScrollView(this).apply { addView(list) }
+        shade.addView(sv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        shade.addView(TextView(this).apply { text = "Cast to TV"; textSize = 16f; setTextColor(fg); setPadding(dp(20), dp(18), dp(20), dp(10)) },
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
+        shade.addView(pill("Close") { closeCast() }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply { topMargin = dp(12); rightMargin = dp(14) })
+        root.addView(shade, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        shade.animate().alpha(1f).setDuration(220).start()
+        castView = shade
+        ui.post(upd)
+        search()
+    }
+    private fun closeCast() {
+        val v = castView ?: return; castView = null
+        v.animate().alpha(0f).setDuration(200).withEndAction { (v.parent as? ViewGroup)?.removeView(v) }.start()
+        castBtn.text = if (tvLink != null) "Casting" else "Cast to TV"; setOn(castBtn, tvLink != null)
         showBar()
     }
 
@@ -612,13 +685,14 @@ class MainActivity : Activity() {
     }
 
     @Deprecated("Back closes the picture chooser first")
-    override fun onBackPressed() { if (settingsView != null) closeSettings() else if (picker != null) closePicker() else @Suppress("DEPRECATION") super.onBackPressed() }
+    override fun onBackPressed() { if (castView != null) closeCast() else if (settingsView != null) closeSettings() else if (picker != null) closePicker() else @Suppress("DEPRECATION") super.onBackPressed() }
 
     override fun onResume() { super.onResume(); gl.onResume() }
     override fun onPause() { gl.onPause(); super.onPause() }
 
     override fun onDestroy() {
         brain.log?.flush()
+        tvLink?.stop()
         ui.removeCallbacksAndMessages(null)
         stopAll()
         super.onDestroy()
