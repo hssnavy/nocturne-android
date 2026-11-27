@@ -39,7 +39,8 @@ class CaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val mode = intent?.getStringExtra("mode") ?: "mic"
-        goForeground(mode)
+        val shared = mode == "device" && intent != null && Build.VERSION.SDK_INT >= 29 && projectionData(intent) != null
+        if (!goForeground(mode, shared)) { stopSelf(); return START_NOT_STICKY }
         stopWorker()
         projection?.stop()
         projection = null
@@ -59,7 +60,8 @@ class CaptureService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun goForeground(mode: String) {
+    /** Screen-share type only when you actually shared the screen: Android 14 refuses it otherwise (that closed the app). */
+    private fun goForeground(mode: String, shared: Boolean): Boolean {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Listening", NotificationManager.IMPORTANCE_LOW))
         val notification = Notification.Builder(this, CHANNEL)
@@ -68,15 +70,19 @@ class CaptureService : Service() {
             .setSmallIcon(R.drawable.ic_stat)
             .setOngoing(true)
             .build()
-        if (Build.VERSION.SDK_INT >= 30) {
-            val type = if (mode == "device")
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            else ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            startForeground(NOTIFICATION_ID, notification, type)
-        } else if (Build.VERSION.SDK_INT == 29 && mode == "device") {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        return try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                val type = if (shared) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                           else ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                startForeground(NOTIFICATION_ID, notification, type)
+            } else if (Build.VERSION.SDK_INT == 29 && shared) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            true
+        } catch (e: Exception) {
+            try { startForeground(NOTIFICATION_ID, notification); true } catch (e2: Exception) { Engine.status = "capture-failed"; false }
         }
     }
 
