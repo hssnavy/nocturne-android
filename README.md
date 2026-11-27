@@ -4,19 +4,26 @@ A native music visualizer for Android 8.0 or newer (listening to the phone's own
 
 ## How it works
 
-There is no browser inside. Sound goes straight from Android's audio system into a native analyser, and the visuals
-are drawn with OpenGL ES 3.0 at the screen's full refresh rate (90/120 Hz where the phone has it), at full resolution
-up to 4K, stepping down only if the graphics chip can't keep up.
+NOCTURNE — a music visualizer by Hassan Al-Yunis
 
-The analysis is the same as the web version's: a fine tone map (every note, 20 Hz-20 kHz), the 10-band EQ + .1 channel,
-the kick drum from the .1 channel (worked out in exact 10 ms steps), tempo, the energy learned from your teaching
-(the Demo track follows your own taught curve), the Wave's 1/3/5/7 strings, and the Light speed ship.
+ENGINE: native Android, no browser. Sound goes straight into a Kotlin analyser; OpenGL ES 3 draws at the screen's full refresh rate (up to 120 Hz) and resolution (up to 4K), lowering detail only if the chip can't keep up.
 
-- **This phone**: whatever the phone plays (Spotify included, through the output mix). Tap **Start now** when Android asks.
-- The microphone is used only when you choose **Microphone**.
-- **Demo track** with pause, seek and ±10 s.
-- Styles: Spectrum bars, Radial, Wave, Tunnel, Kaleidoscope, Shatter, Rising sparks, Warp, Fractal, Light speed.
-- 16 pictures (13 photos + 3 generated), the controls minimise to a small chevron at the bottom-right.
+SOUND: This phone hears what the phone plays (Spotify included, through the output mix; screen share optional for more detail). Microphone only when you choose it. Demo track built in.
+
+ANALYSIS (every frame, plus exact 10 ms steps):
+- Tone map: 256 bands, 20 Hz–20 kHz, every note measured against its own recent level, so faint highs show.
+- 10-band EQ + .1 sub channel; the kick drum is read from the .1 channel (a sharp sub jump above the rolling bass).
+- Energy: a model learned from your hand-taught curves (bass and highs vs low-mids, loudness vs the song's peak, kick patterns). Rises instantly, settles slowly; songs open calm and build.
+- BPM: kick + whole drum kit, first guess in seconds, then locked once per song.
+
+STYLES: 10 styles share this analysis; energy sets how calm or aggressive, bright and colourful they are.
+- Wave: 1–7 strings split 20 Hz–20 kHz. Each string's own band sets its height (bounces on hits), wavelength, right-to-left flow (a steady sound stands still) and glow. The kick punches the lowest string. Background smoke follows energy.
+- Radial: the solid ring beats only with the kick; the outer fragments follow the spectrum.
+- Light speed: a ship that starts at rest and speeds up with the song; kicks surge it.
+
+LEARNING: each song leaves an anonymous record (sound features, energy, BPM, no audio), kept on the phone and uploaded when online, to improve future versions.
+
+The same text is shown in the app under Settings → About Nocturne.
 
 ## Build the APK
 

@@ -1,0 +1,18 @@
+NOCTURNE — a music visualizer by Hassan Al-Yunis
+
+ENGINE: native Android, no browser. Sound goes straight into a Kotlin analyser; OpenGL ES 3 draws at the screen's full refresh rate (up to 120 Hz) and resolution (up to 4K), lowering detail only if the chip can't keep up.
+
+SOUND: This phone hears what the phone plays (Spotify included, through the output mix; screen share optional for more detail). Microphone only when you choose it. Demo track built in.
+
+ANALYSIS (every frame, plus exact 10 ms steps):
+• Tone map: 256 bands, 20 Hz–20 kHz, every note measured against its own recent level, so faint highs show.
+• 10-band EQ + .1 sub channel; the kick drum is read from the .1 channel (a sharp sub jump above the rolling bass).
+• Energy: a model learned from your hand-taught curves (bass and highs vs low-mids, loudness vs the song's peak, kick patterns). Rises instantly, settles slowly; songs open calm and build.
+• BPM: kick + whole drum kit, first guess in seconds, then locked once per song.
+
+STYLES: 10 styles share this analysis; energy sets how calm or aggressive, bright and colourful they are.
+• Wave: 1–7 strings split 20 Hz–20 kHz. Each string's own band sets its height (bounces on hits), wavelength, right-to-left flow (a steady sound stands still) and glow. The kick punches the lowest string. Background smoke follows energy.
+• Radial: the solid ring beats only with the kick; the outer fragments follow the spectrum.
+• Light speed: a ship that starts at rest and speeds up with the song; kicks surge it.
+
+LEARNING: each song leaves an anonymous record (sound features, energy, BPM, no audio), kept on the phone and uploaded when online, to improve future versions.

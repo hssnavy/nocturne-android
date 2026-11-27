@@ -354,6 +354,14 @@ class MainActivity : Activity() {
         choice("Screen shake", listOf(false to "Off", true to "On"), { S.shake }, { S.shake = it })
         choice("Quality", listOf("auto" to "Auto (smoothest)", "balanced" to "Balanced", "high" to "High (up to 4K)"), { S.quality }, { S.quality = it },
             "Auto lowers the detail slightly when needed to keep the full frame rate.")
+        // About: what Nocturne is and how it works
+        run {
+            val box = section("About Nocturne")
+            box.addView(TextView(this).apply {
+                text = try { assets.open("about.txt").bufferedReader().use { it.readText() } } catch (_: Exception) { "" }
+                textSize = 12f; setTextColor(Color.argb(200, 233, 237, 242)); setLineSpacing(0f, 1.25f); setPadding(0, dp(6), 0, 0)
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
         list.addView(pill("Reset to defaults") { Settings.reset(); Settings.save(this); closeSettings(); showSettings() },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(16) })
         val sv = android.widget.ScrollView(this).apply { addView(list) }
