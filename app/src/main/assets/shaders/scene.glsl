@@ -155,7 +155,7 @@ void main(){
       y += pulse*(mod(fk, 2.) < 0.5 ? 1. : -1.);
       float kd = (Xr - uKAge*2.6)/0.14;                             // the kick drum's own wave, rolling in from the right
       y -= kick*exp(-kd*kd)*(0.05 + 0.08*uEnergy)*envR;
-      y *= 0.05 + 0.95*pow(smoothstep(0.2, 0.85, uE), 1.3);        // low energy: the strings settle almost flat (sensitivity unchanged)
+      y *= 0.15 + 0.85*smoothstep(0.1, 0.75, uE);                  // low energy: the strings calm down a lot, not quite flat (sensitivity unchanged)
       y += (fk - (n - 1.)*0.5)*0.012*min(1., 3./n);                 // strings sit just apart
       float d = abs(q.y - y);
       float thick = 0.0013 + tl*0.0022 + hit*0.0022 + tc*0.002;
