@@ -69,6 +69,8 @@ class MainActivity : Activity() {
     private var seeking = false
     private var minimised = false
     private var picIndex = 0
+    private var screenShare = false
+    private lateinit var shareBtn: TextView
     private val accent = Color.rgb(255, 106, 43)
     private val fg = Color.rgb(233, 237, 242)
     private val muted = Color.rgb(138, 147, 160)
@@ -88,6 +90,7 @@ class MainActivity : Activity() {
         val prefs = getPreferences(MODE_PRIVATE)
         brain.strings = prefs.getInt("strings", 3)
         minimised = prefs.getBoolean("min", false)
+        screenShare = prefs.getBoolean("share", false)
 
         renderer = Renderer(this, pics, brain) { msg -> runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() } }
         gl = GLSurfaceView(this)
@@ -201,9 +204,17 @@ class MainActivity : Activity() {
         sourceButtons["device"] = pill("This phone") { toggle("device") }
         sourceButtons["mic"] = pill("Microphone") { toggle("mic") }
         sourceButtons["demo"] = pill("Demo track") { toggle("demo") }
+        // optional: share the screen for the most detailed sound from apps that allow it (YouTube, games...).
+        // Off by default: the phone's sound (Spotify included) is heard through its output without sharing anything.
+        shareBtn = pill("Screen share: off") {
+            screenShare = !screenShare
+            getPreferences(MODE_PRIVATE).edit().putBoolean("share", screenShare).apply()
+            refreshButtons()
+            if (source == "device") { stopService(Intent(this, CaptureService::class.java)); startPhone() }
+        }
         status = TextView(this).apply { setTextColor(muted); textSize = 11f; typeface = Typeface.MONOSPACE; setPadding(dp(8), 0, dp(6), 0) }
         meter = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; progressTintList = ColorStateList.valueOf(accent) }
-        val r3 = row(label("Sound"), sourceButtons["device"]!!, sourceButtons["mic"]!!, sourceButtons["demo"]!!, label("Energy"))
+        val r3 = row(label("Sound"), sourceButtons["device"]!!, sourceButtons["mic"]!!, sourceButtons["demo"]!!, shareBtn, label("Energy"))
         r3.addView(meter, LinearLayout.LayoutParams(dp(70), dp(6)))
         r3.addView(status)
 
@@ -390,6 +401,7 @@ class MainActivity : Activity() {
         seekRow.visibility = if (source == "demo") View.VISIBLE else View.GONE
         (seekRow.parent as? View)?.visibility = seekRow.visibility
         playBtn.text = if (demo.paused) "▶" else "❚❚"
+        shareBtn.text = if (screenShare) "Screen share: on" else "Screen share: off"; setOn(shareBtn, screenShare)
         hud.text = "${pics[picIndex].name}  ·  ${STYLES[renderer.style].name}"
     }
 
@@ -460,7 +472,7 @@ class MainActivity : Activity() {
     private fun startCapture(mode: String) {
         if (!hasMic()) { pendingMode = mode; requestPermissions(neededPermissions(), REQ_AUDIO); return }
         if (demo.isPlaying) demo.stop()
-        if (mode == "device" && Build.VERSION.SDK_INT >= 29) {
+        if (mode == "device" && screenShare && Build.VERSION.SDK_INT >= 29) {
             val mpm = getSystemService(MediaProjectionManager::class.java)
             // Android 14+: ask for the whole screen. Sharing "one app" would only capture Nocturne's own (silent) sound.
             val consent = if (Build.VERSION.SDK_INT >= 34)
@@ -482,7 +494,7 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_PROJECTION) {
             if (resultCode == RESULT_OK && data != null) startService("device", resultCode, data)
-            else { Toast.makeText(this, "Phone sound needs you to tap Start now. Using the microphone for now", Toast.LENGTH_LONG).show(); startService("mic", 0, null) }
+            else { Toast.makeText(this, "No screen share: listening to the phone's sound without it", Toast.LENGTH_SHORT).show(); startService("device", 0, null) }
         }
     }
 
