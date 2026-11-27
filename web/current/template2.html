@@ -388,7 +388,7 @@ void main(){
       // Added on top (not multiplied by the wave), so a note can't vanish where the wave happens to cross the middle.
       float dl = 2.5/256.;
       float tc = W2 ? 0. : max(0., tl - 0.5*(tnS(tp - dl) + tnS(tp + dl)));   // Wave 2: no per-note bumps, cleaner line
-      y += (tc*1.5 + tl*(W2 ? 0. : 0.25))*(0.03 + 0.05*uEnergy)*(1. + 0.7*fr)*envR;
+      y += (tc*2.2 + tl*(W2 ? 0. : 0.3))*(0.03 + 0.05*uEnergy)*(1. + 0.7*fr)*envR;
       float calm = 0.15 + 0.85*smoothstep(0.1, 0.75, uE);          // low energy: the body of the strings calms down a lot
       y *= calm;
       // ...but a single hit in a calm moment still shows clearly, even MORE when the string is resting:
@@ -1057,7 +1057,7 @@ function analyse(dt, now){
       TONE.pkB[i] = Math.max(d, TONE.pkB[i] - dt*2*G, -90);
       // its own slow floor (rises over minutes): a held high note or a steady shaker doesn't fade out of view
       TONE.flS[i] += (d - TONE.flS[i])*Math.min(1, dt*(d < TONE.flS[i] ? 5 : 0.006));
-      const ref = Math.max(TONE.flS[i] + 3, TONE.pkB[i] - 36);
+      const ref = Math.max(TONE.flS[i] + 2, TONE.pkB[i] - 48);    // every tone down to 48 dB under its bin's peak shows
       let t = Math.min(1.2, Math.max(0, (d - ref)/(TONE.pkB[i] + 1 - ref + 1e-3))*S.sens)*G;
       if(d < -150) t = 0;
       TONE.vs[i] = t > TONE.vs[i] ? t : TONE.vs[i] + (t - TONE.vs[i])*Math.min(1, dt*22);
@@ -1340,7 +1340,7 @@ function learnTick(){
   const XF = LEARN.xf || X, ff = [XF[0] - XF[1], XF[2] - XF[1], XF[3] - LEARN.pk, XF[4] - LEARN.kickL, XF[4]];
   let ef = LEARN.w[5]; for(let j=0;j<5;j++) ef += LEARN.w[j]*(ff[j] - LEARN.mu[j])/LEARN.sd[j];
   // instant up, settled down: when the song rises the energy follows immediately; it eases back on the slower reading
-  LEARN.E = Math.min(1, Math.max(0, Math.max(e, ef)/100))*(LEARN.gate === undefined ? 1 : LEARN.gate);
+  LEARN.E = Math.min(1, Math.max(0, Math.max(e, ef)/80))*(LEARN.gate === undefined ? 1 : LEARN.gate);
 }
 // The loudness that counts as "full" for the energy: fixed (-20 dB, fitted to the taught demo track), 12 dB lower for the
 // microphone (it hears the room, not the file). Sensitivity moves it: x2 sensitivity = 12 dB more sensitive.
@@ -1493,7 +1493,8 @@ function frame(now){
     for(let i=i0;i<i1;i++){ const v = TONE.vs[i]; fl += Math.max(0, v - SR.prev[i]); if(TONE.db[i] > dmax) dmax = TONE.db[i]; cw += v*(i - i0); cs += v; }
     const fr = NS > 1 ? b/(NS-1) : 0.5;
     // the same sensitivity for every string, set by its band's dial (lows, mids or highs)
-    const uc = (b + 0.5)/NS, g = dialX(uc < 1/3 ? S.svL : uc < 2/3 ? S.svM : S.svH);
+    // mids 12% and highs 15% more sensitive than the lows
+    const uc = (b + 0.5)/NS, g = uc < 1/3 ? dialX(S.svL) : uc < 2/3 ? 1.12*dialX(S.svM) : 1.15*dialX(S.svH);
     // 1. AMPLITUDE = how loud its part is now, against its own loudest lately (falls 0.5 dB/s)
     const G = LEARN.gate === undefined ? 1 : LEARN.gate;
     SR.pk[b] = Math.max(dmax, SR.pk[b] - dt*0.5*G, -80);
@@ -1516,13 +1517,13 @@ function frame(now){
     // of the slice still counts as a hit (the plain average used to wash it out)
     let f = 0;
     if(live2){ const jumps = []; for(let i=i0;i<i1;i++){ const dv = TONE.vs[i] - SR.prev[i]; if(dv > 0) jumps.push(dv); }
-      jumps.sort((x,y)=>y-x); for(let k=0;k<Math.min(8, jumps.length);k++) f += jumps[k]; f /= 8; }
+      jumps.sort((x,y)=>y-x); for(let k=0;k<Math.min(12, jumps.length);k++) f += jumps[k]; f /= 12; }
     SR.act[b] += (Math.min(1.5, (fl/(i1-i0))*g*14) - SR.act[b])*Math.min(1, dt*4);
     SR.p[b] += dt*(0.6 + 0.6*fr)*(0.08 + SR.act[b]*2.2 + SR.l[b]*0.25)*1.8;   // a little slower
     // beat in its part
     const hs = SR.hist[b]; hs.push(f); if(hs.length > 45) hs.shift();
     const mean = hs.reduce((x,y)=>x+y,0)/hs.length, sd = Math.sqrt(hs.reduce((x,y)=>x+(y-mean)*(y-mean),0)/hs.length);
-    if(live2 && hs.length > 10 && f > mean + 1.2*sd/g + 0.02/g && now - SR.last[b] > 90){
+    if(live2 && hs.length > 10 && f > mean + 1.0*sd/g + 0.015/g && now - SR.last[b] > 90){
       SR.hit[b] = Math.max(SR.hit[b], Math.min(1, 0.55 + (f - mean)/(4*sd + 1e-4))); SR.age[b] = 0; SR.last[b] = now;
     }
     SR.hit[b] *= Math.exp(-dt*(5 + 4*fr)); SR.age[b] += dt;

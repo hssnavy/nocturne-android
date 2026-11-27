@@ -235,7 +235,7 @@ class Brain(ctx: Context) {
         val XF = Lxf ?: X
         val ff = floatArrayOf(XF[0] - XF[1], XF[2] - XF[1], XF[3] - Lpk, XF[4] - LkickL, XF[4])
         var ef = Lw[5]; for (j in 0 until 5) ef += Lw[j] * (ff[j] - Lmu[j]) / Lsd[j]
-        LE = min(1f, max(0f, max(e, ef) / 100)) * gate          // instant up, settled down; nothing in silence
+        LE = min(1f, max(0f, max(e, ef) / 80)) * gate          // instant up, settled down; nothing in silence
     }
 
     /** The loudness that counts as "full": fixed (-20 dB, fitted to the taught demo track), 12 dB lower for the microphone.
@@ -342,7 +342,7 @@ class Brain(ctx: Context) {
                 val d = toneDb[i]
                 pkB[i] = max(d, max(pkB[i] - dt * 2 * G, -90f))
                 flS[i] += (d - flS[i]) * min(1f, dt * (if (d < flS[i]) 5f else 0.006f))
-                val ref = max(flS[i] + 3, pkB[i] - 36)
+                val ref = max(flS[i] + 2, pkB[i] - 48)          // every tone down to 48 dB under its bin's peak shows
                 var t = min(1.2f, max(0f, (d - ref) / (pkB[i] + 1 - ref + 1e-3f)) * sens) * G
                 if (d < -150) t = 0f
                 toneVs[i] = if (t > toneVs[i]) t else toneVs[i] + (t - toneVs[i]) * min(1f, dt * 22)
@@ -504,7 +504,8 @@ class Brain(ctx: Context) {
             val fr = if (NS > 1) b.toFloat() / (NS - 1) else 0.5f
             // the same sensitivity for every string, set by its band's dial (lows, mids or highs)
             val uc = (b + 0.5f) / NS
-            val g = Settings.dialX(if (uc < 1f / 3) Settings.svL else if (uc < 2f / 3) Settings.svM else Settings.svH)
+            // mids 12% and highs 15% more sensitive than the lows
+            val g = if (uc < 1f / 3) Settings.dialX(Settings.svL) else if (uc < 2f / 3) 1.12f * Settings.dialX(Settings.svM) else 1.15f * Settings.dialX(Settings.svH)
             // 1. amplitude: how loud its part is now against its own loudest lately
             strPk[b] = max(dmax, max(strPk[b] - dt * 0.5f * gate, -80f))
             val lvl = if (live && dmax > -150) gate * max(0f, min(1.2f, (dmax - (strPk[b] - 30)) / 30)) else 0f
@@ -524,13 +525,13 @@ class Brain(ctx: Context) {
             // the slice (hi-hats, shakers, rim clicks) still counts as a hit
             var f = 0f
             if (live) { val jumps = ArrayList<Float>(); for (i in i0 until i1) { val dv = toneVs[i] - strPrev[i]; if (dv > 0) jumps.add(dv) }
-                jumps.sortDescending(); for (q in 0 until min(8, jumps.size)) f += jumps[q]; f /= 8 }
+                jumps.sortDescending(); for (q in 0 until min(12, jumps.size)) f += jumps[q]; f /= 12 }
             strAct[b] += (min(1.5f, (fl / (i1 - i0)) * g * 14) - strAct[b]) * min(1f, dt * 4)
             strP[b] += dt * (0.6f + 0.6f * fr) * (0.08f + strAct[b] * 2.2f + strL[b] * 0.25f) * 1.8f
             // beat in its part
             val hs = strHist[b]; hs.addLast(f); if (hs.size > 45) hs.removeFirst()
             val (mean, sd) = meanSd(hs)
-            if (live && hs.size > 10 && f > mean + 1.2f * sd / g + 0.02f / g && now - strLast[b] > 90) {
+            if (live && hs.size > 10 && f > mean + 1.0f * sd / g + 0.015f / g && now - strLast[b] > 90) {
                 strHit[b] = max(strHit[b], min(1f, 0.55f + (f - mean) / (4 * sd + 1e-4f))); strAge[b] = 0f; strLast[b] = now
             }
             strHit[b] *= exp(-dt * (5 + 4 * fr)); strAge[b] += dt

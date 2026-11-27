@@ -20,6 +20,7 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
@@ -201,10 +202,18 @@ class CaptureService : Service() {
             } catch (_: Exception) {}
             return k
         }
+        /** How much the phone's volume turns the mix down, for the device the sound goes to now (headphones over
+         *  Bluetooth that set their own volume report 0 dB). Undone in read(), so the level is the song's own. */
         private fun volumeDb(): Float = try {
-            @Suppress("DEPRECATION") val bt = am.isBluetoothA2dpOn
-            if (bt || Build.VERSION.SDK_INT < 28) 0f
-            else max(-40f, am.getStreamVolumeDb(AudioManager.STREAM_MUSIC, am.getStreamVolume(AudioManager.STREAM_MUSIC), android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER))
+            if (Build.VERSION.SDK_INT < 28) 0f else {
+                val outs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map { it.type }
+                val D = android.media.AudioDeviceInfo::class.java
+                val prefer = listOf("TYPE_BLE_HEADSET", "TYPE_BLE_SPEAKER", "TYPE_BLUETOOTH_A2DP", "TYPE_USB_HEADSET", "TYPE_WIRED_HEADPHONES", "TYPE_WIRED_HEADSET")
+                    .mapNotNull { n -> try { D.getField(n).getInt(null) } catch (_: Exception) { null } }
+                val dev = prefer.firstOrNull { it in outs } ?: android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                val idx = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                if (idx == 0) -40f else max(-40f, min(0f, am.getStreamVolumeDb(AudioManager.STREAM_MUSIC, idx, dev)))
+            }
         } catch (_: Exception) { 0f }
         fun release() { try { viz.enabled = false; viz.release() } catch (_: Exception) {} }
     }

@@ -156,7 +156,7 @@ void main(){
       // Added on top (not multiplied by the wave), so a note can't vanish where the wave happens to cross the middle.
       float dl = 2.5/256.;
       float tc = W2 ? 0. : max(0., tl - 0.5*(tnS(tp - dl) + tnS(tp + dl)));   // Wave 2: no per-note bumps, cleaner line
-      y += (tc*1.5 + tl*(W2 ? 0. : 0.25))*(0.03 + 0.05*uEnergy)*(1. + 0.7*fr)*envR;
+      y += (tc*2.2 + tl*(W2 ? 0. : 0.3))*(0.03 + 0.05*uEnergy)*(1. + 0.7*fr)*envR;
       float calm = 0.15 + 0.85*smoothstep(0.1, 0.75, uE);          // low energy: the body of the strings calms down a lot
       y *= calm;
       // ...but a single hit in a calm moment still shows clearly, even MORE when the string is resting:
