@@ -181,7 +181,11 @@ class CaptureService : Service() {
             val mixBuf = FloatArray(1024)
             val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val device = if (mode == "device") playbackRecord() else null
-            val tap: MixTap? = if (mode == "device") try { MixTap() } catch (e: Exception) { null } else null
+            // The output-mix tap is attached only once music has really been playing for a moment, and let go again
+            // when the phone has been quiet for a while. Attaching it at the very moment a player starts (over
+            // Bluetooth especially) can make that player stop, so it never happens while you press play.
+            var tap: MixTap? = null
+            var musicMs = 0; var silentMs = 0
             var mic: AudioRecord? = null
             device?.startRecording()
             // which source feeds the visuals: "device" (playback capture), "mix" (Visualizer), "mic"
@@ -213,6 +217,10 @@ class CaptureService : Service() {
                     if (n > 0) { if (rms(buf, n) > 1e-4f) devQuietMs = 0 else devQuietMs += n * 1000 / SAMPLE_RATE }
                 } else Thread.sleep(5)
                 // 2) the output mix: works for Spotify and other apps that block capture
+                val stepMs = if (n > 0) n * 1000 / SAMPLE_RATE else 5
+                if (am.isMusicActive) { musicMs += stepMs; silentMs = 0 } else { silentMs += stepMs; musicMs = 0 }
+                if (tap == null && devQuietMs >= 1500 && musicMs > 1500) tap = try { MixTap() } catch (e: Exception) { null }
+                if (tap != null && silentMs > 8000) { tap.release(); tap = null; mixQuietMs = 99999 }
                 var k = 0
                 if (tap != null) {
                     k = tap.read(mixBuf)
